@@ -5,11 +5,13 @@ from datetime import datetime
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
+from app.incidents import PROJECT_LOCK, project_events
 from app.parser.telegram import TelegramNotification
 
 
 async def initialize(connection: AsyncConnection) -> None:
     async with connection.transaction():
+        await connection.execute("SELECT pg_advisory_xact_lock(%s)", (PROJECT_LOCK,))
         await connection.execute(
             """
             CREATE TABLE IF NOT EXISTS telegram_notifications (
@@ -36,6 +38,44 @@ async def initialize(connection: AsyncConnection) -> None:
                 PRIMARY KEY (chat_id, message_id, position),
                 FOREIGN KEY (chat_id, message_id)
                     REFERENCES telegram_notifications (chat_id, message_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS incidents (
+                id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                chat_id bigint NOT NULL,
+                sender_id bigint NOT NULL,
+                alertname text NOT NULL,
+                resource_key jsonb NOT NULL,
+                opened_at timestamptz NOT NULL,
+                closed_at timestamptz
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS incidents_open_identity
+                ON incidents (chat_id, sender_id, alertname, resource_key)
+                WHERE closed_at IS NULL;
+
+            CREATE TABLE IF NOT EXISTS tickets (
+                id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                incident_id bigint NOT NULL UNIQUE REFERENCES incidents (id),
+                created_at timestamptz NOT NULL DEFAULT now(),
+                resolution text
+            );
+            CREATE TABLE IF NOT EXISTS incident_events (
+                chat_id bigint NOT NULL,
+                message_id bigint NOT NULL,
+                position integer NOT NULL,
+                incident_id bigint NOT NULL REFERENCES incidents (id),
+                PRIMARY KEY (chat_id, message_id, position),
+                FOREIGN KEY (chat_id, message_id, position)
+                    REFERENCES alert_events (chat_id, message_id, position)
+            );
+            CREATE INDEX IF NOT EXISTS incident_events_incident_id ON incident_events (incident_id);
+
+            CREATE TABLE IF NOT EXISTS incident_correlations (
+                first_incident_id bigint NOT NULL REFERENCES incidents (id),
+                second_incident_id bigint NOT NULL REFERENCES incidents (id),
+                evidence jsonb NOT NULL,
+                PRIMARY KEY (first_incident_id, second_incident_id),
+                CHECK (first_incident_id < second_incident_id)
             );
             """
         )
@@ -92,4 +132,5 @@ async def record_notification(
                     """,
                     rows,
                 )
+            await project_events(connection, (chat_id, message_id))
         return True
