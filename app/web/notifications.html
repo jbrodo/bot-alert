@@ -4,7 +4,7 @@
     <h1>Notifiche Telegram</h1>
     <section class="notification-register" aria-label="Registro notifiche">
       <nav class="tabs" aria-label="Filtra notifiche">
-        {% for value, label in [('all', 'Tutte'), ('unparsed', 'Fuori formato'), ('unlinked', 'Eventi senza incidente')] %}
+        {% for value, label in [('all', 'Tutte'), ('unparsed', 'Fuori formato'), ('unlinked', 'Senza incidente')] %}
         <a href="/notifications?scope={{ value }}" {% if scope == value %}aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
       </nav>
