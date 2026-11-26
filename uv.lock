@@ -232,7 +232,7 @@ dev = [
     { name = "djlint", specifier = ">=1.54.2" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "pre-commit", specifier = ">=4.7.0" },
-    { name = "pytest", specifier = ">=9.2.0,<10" }.
+    { name = "pytest", specifier = ">=9.2.0,<10" },
     { name = "ruff", specifier = ">=0.17.6" },
     { name = "ty", specifier = ">=0.0.112" },
 ]
