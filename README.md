@@ -1,5 +1,8 @@
 # Alert Intelligence
 
+Le prossime funzionalità, compreso il riepilogo degli incidenti con IA, sono
+descritte nella [roadmap](doc/roadmap.md).
+
 Il parser legge il testo restituito da Telegram in `Message.text` per il
 template italiano in [values-monitoring.yaml](doc/raw/values-monitoring.yaml).
 
@@ -18,6 +21,20 @@ restituiscono `None`.
 
 Esegui i test con Python 3.12 o successivo e `uv run pytest`. Le fixture
 riproducono il template Helm con dati sintetici.
+
+## Controlli di sviluppo
+
+Installa le dipendenze di sviluppo e attiva l'hook Git:
+
+```sh
+uv sync --locked
+uv run --locked pre-commit install
+uv run --locked pre-commit run --all-files
+```
+
+Al commit vengono eseguiti i controlli sui file, Ruff e pytest. Senza
+`TEST_DATABASE_URL` i test PostgreSQL vengono saltati; la CI li esegue con
+un database dedicato. Il primo avvio scarica gli ambienti degli hook.
 
 ## Collector Telegram
 
