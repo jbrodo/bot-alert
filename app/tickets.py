@@ -40,7 +40,9 @@ async def list_tickets(connection: AsyncConnection) -> list[dict]:
     async with connection.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
             """
-            SELECT t.id AS ticket_id, i.id AS incident_id, i.alertname, i.resource_key,
+            SELECT t.id AS ticket_id, i.id AS incident_id,
+                   CASE WHEN i.closed_at IS NULL THEN 'OPEN' ELSE 'CLOSED' END AS status,
+                   i.alertname, i.resource_key,
                    i.opened_at, i.closed_at, t.resolution, events.event_count,
                    COALESCE(links.correlations, '[]'::jsonb) AS correlations
             FROM tickets t

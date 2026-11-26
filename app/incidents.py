@@ -54,12 +54,13 @@ async def project_events(
         for row in await pending.fetchall():
             chat_id, message_id, position, sender_id, sent_at, alertname, status, resource, summary = row
             key = resource_key(alertname, resource, summary)
-            if not key:
-                if status == "RESOLVED":
-                    continue
-                key = {"message_id": message_id, "position": position}
+            if not key and status == "RESOLVED":
+                continue
 
-            identity = (chat_id, sender_id, alertname, Jsonb(key))
+            identity = (
+                chat_id, sender_id, alertname,
+                Jsonb(key or {"message_id": message_id, "position": position}),
+            )
             cursor = await connection.execute(
                 """
                 SELECT id FROM incidents
@@ -100,7 +101,7 @@ async def project_events(
 
 
 class VerifiedMapping(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     node: str = Field(min_length=1)
     device: str = Field(min_length=1)
