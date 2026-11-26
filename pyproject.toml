@@ -14,10 +14,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "djlint>=1.54.2",
     "httpx>=0.28,<1",
     "pre-commit>=4.7.0",
     "pytest>=8,<10",
     "ruff>=0.17.6",
+    "ty>=0.0.112",
 ]
 
 [tool.pytest.ini_options]

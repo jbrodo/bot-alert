@@ -3,64 +3,67 @@
 {% block content %}
     <h1>Notifiche Telegram</h1>
     <section class="notification-register" aria-label="Registro notifiche">
-      <nav class="tabs" aria-label="Filtra notifiche">
-        {% for value, label in [('all', 'Tutte'), ('unparsed', 'Fuori formato'), ('unlinked', 'Senza incidente')] %}
-        <a href="/notifications?scope={{ value }}" {% if scope == value %}aria-current="page"{% endif %}>{{ label }}</a>
-        {% endfor %}
-      </nav>
-      <ul class="incident-list">
-        {% for message in messages %}
-        <li class="notification-entry">
-          <details>
-            <summary>
-              <span class="notification-heading">
-                <span class="row-main">
-                  <strong>{{ message.alertname or 'Formato non riconosciuto' }}</strong>
-                  {% if not message.alertname %}
-                  <span class="resource-line">{{ message.raw_text.split() | join(' ') | truncate(100, true, '…', 0) }}</span>
-                  {% endif %}
-                  <time class="resource-line" datetime="{{ message.sent_at.isoformat() }}">{{ message.sent_at | utc }}</time>
-                </span>
-                <span class="row-meta">
-                  {% if message.group_status %}
-                  <span class="event-status {{ message.group_status | lower }}">{{ message.group_status }}</span>
-                  <span>{{ message.linked_count }} di {{ message.event_count }} collegati</span>
-                  {% endif %}
-                </span>
-              </span>
-            </summary>
-            <div class="notification-body">
-              {% if message.events %}
-              <ul class="notification-events">
-                {% for event in message.events %}
-                <li>
-                  {% set summary_id = 'evento-' ~ message.chat_id ~ '-' ~ message.message_id ~ '-' ~ event.position %}
-                  <strong id="{{ summary_id }}">{{ event.summary }}</strong>
-                  <span>{{ event.status or 'Stato indeterminato' }}</span>
-                  {% if event.incident_id %}
-                  <a aria-describedby="{{ summary_id }}" href="{{ incident_link('all', '', incident=event.incident_id) }}#incident">Incidente #{{ event.incident_id }}</a>
-                  {% else %}
-                  <span>Senza incidente</span>
-                  {% endif %}
+        <nav class="tabs" aria-label="Filtra notifiche">
+            {% for value, label in [('all', 'Tutte'), ('unparsed', 'Fuori formato'), ('unlinked', 'Senza incidente')] %}
+                <a href="/notifications?scope={{ value }}"
+                   {% if scope == value %}aria-current="page"{% endif %}>{{ label }}</a>
+            {% endfor %}
+        </nav>
+        <ul class="incident-list">
+            {% for message in messages %}
+                <li class="notification-entry">
+                    <details>
+                        <summary>
+                            <span class="notification-heading">
+                                <span class="row-main">
+                                    <strong>{{ message.alertname or 'Formato non riconosciuto' }}</strong>
+                                    {% if not message.alertname %}
+                                        <span class="resource-line">{{ message.raw_text.split() | join(' ') | truncate(100, true, '…', 0) }}</span>
+                                    {% endif %}
+                                    <time class="resource-line"
+                                          datetime="{{ message.sent_at.isoformat() }}">{{ message.sent_at | utc }}</time>
+                                </span>
+                                <span class="row-meta">
+                                    {% if message.group_status %}
+                                        <span class="event-status {{ message.group_status | lower }}">{{ message.group_status }}</span>
+                                        <span>{{ message.linked_count }} di {{ message.event_count }} collegati</span>
+                                    {% endif %}
+                                </span>
+                            </span>
+                        </summary>
+                        <div class="notification-body">
+                            {% if message.events %}
+                                <ul class="notification-events">
+                                    {% for event in message.events %}
+                                        <li>
+                                            {% set summary_id = 'evento-' ~ message.chat_id ~ '-' ~ message.message_id ~ '-' ~ event.position %}
+                                            <strong id="{{ summary_id }}">{{ event.summary }}</strong>
+                                            <span>{{ event.status or 'Stato indeterminato' }}</span>
+                                            {% if event.incident_id %}
+                                                <a aria-describedby="{{ summary_id }}"
+                                                   href="{{ incident_link('all', '', incident=event.incident_id) }}#incident">Incidente #{{ event.incident_id }}</a>
+                                            {% else %}
+                                                <span>Senza incidente</span>
+                                            {% endif %}
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                            <h2>Messaggio originale</h2>
+                            <pre>{{ message.raw_text }}</pre>
+                        </div>
+                    </details>
                 </li>
-                {% endfor %}
-              </ul>
-              {% endif %}
-              <h2>Messaggio originale</h2>
-              <pre>{{ message.raw_text }}</pre>
-            </div>
-          </details>
-        </li>
-        {% else %}
-        <li class="empty">{{ 'Nessuna notifica ricevuta.' if scope == 'all' else 'Nessuna notifica corrisponde al filtro.' }}</li>
-        {% endfor %}
-      </ul>
-      {% if page > 1 or next_page %}
-      <nav class="pagination" aria-label="Pagine delle notifiche">
-        {% if page > 1 %}<a href="/notifications?scope={{ scope }}&amp;page={{ page - 1 }}">Precedente</a>{% endif %}
-        <span>Pagina {{ page }}</span>
-        {% if next_page %}<a href="/notifications?scope={{ scope }}&amp;page={{ page + 1 }}">Successiva</a>{% endif %}
-      </nav>
-      {% endif %}
+            {% else %}
+                <li class="empty">{{ 'Nessuna notifica ricevuta.' if scope == 'all' else 'Nessuna notifica corrisponde al filtro.' }}</li>
+            {% endfor %}
+        </ul>
+        {% if page > 1 or next_page %}
+            <nav class="pagination" aria-label="Pagine delle notifiche">
+                {% if page > 1 %}<a href="/notifications?scope={{ scope }}&amp;page={{ page - 1 }}">Precedente</a>{% endif %}
+                <span>Pagina {{ page }}</span>
+                {% if next_page %}<a href="/notifications?scope={{ scope }}&amp;page={{ page + 1 }}">Successiva</a>{% endif %}
+            </nav>
+        {% endif %}
     </section>
 {% endblock %}

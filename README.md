@@ -32,9 +32,12 @@ uv run --locked pre-commit install
 uv run --locked pre-commit run --all-files
 ```
 
-Al commit vengono eseguiti i controlli sui file, Ruff e pytest. Senza
-`TEST_DATABASE_URL` i test PostgreSQL vengono saltati; la CI li esegue con
-un database dedicato. Il primo avvio scarica gli ambienti degli hook.
+Al commit vengono eseguiti i controlli sui file, Ruff, ty e pytest. Ruff,
+djLint e Prettier applicano automaticamente le correzioni sicure e formattano
+Python, template Jinja e CSS: se modificano file, verifica le modifiche,
+aggiungile allo staging e ripeti il commit. Senza `TEST_DATABASE_URL` i test
+PostgreSQL vengono saltati; la CI li esegue con un database dedicato. Il primo
+avvio scarica gli ambienti degli hook.
 
 ## Collector Telegram
 
@@ -128,7 +131,9 @@ uv run --env-file "$HOME/.config/alert-intelligence/collector.env" uvicorn app.a
 
 Apri `http://127.0.0.1:8000/`. L'elenco filtra per stato o per nome e risorsa.
 Il dettaglio mostra eventi, dati Telegram originali, correlazioni e il modulo
-di chiusura. La vista **Notifiche** mostra anche i messaggi fuori formato
+di chiusura. Da **Correlazioni → Collega un incidente** puoi registrare dalla
+dashboard la stessa mappatura verificata richiesta dalla CLI. La vista
+**Notifiche** mostra anche i messaggi fuori formato
 e gli eventi senza incidente, con un collegamento dove disponibile.
 L'elenco JSON corrispondente è in `/api/notifications` e le operazioni
 sono documentate in `/docs`. La dashboard

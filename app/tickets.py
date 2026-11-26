@@ -13,7 +13,9 @@ from app.incidents import PROJECT_LOCK, VerifiedMapping, correlate, project_even
 from app.storage import initialize
 
 
-async def close_ticket(connection: AsyncConnection, ticket_id: int, resolution: str) -> bool:
+async def close_ticket(
+    connection: AsyncConnection, ticket_id: int, resolution: str
+) -> bool:
     resolution = resolution.strip()
     if not resolution:
         raise ValueError("Serve una nota di chiusura")
@@ -85,8 +87,14 @@ async def list_tickets(
             ORDER BY CASE WHEN %(limit)s::integer IS NOT NULL THEN t.id END DESC, t.id
             LIMIT %(limit)s OFFSET %(offset)s
             """,
-            dict(incident_id=incident_id, status=status, search=search, limit=limit,
-                 offset=offset, include_latest=include_latest),
+            dict(
+                incident_id=incident_id,
+                status=status,
+                search=search,
+                limit=limit,
+                offset=offset,
+                include_latest=include_latest,
+            ),
         )
         rows = await cursor.fetchall()
         if not include_latest:
@@ -95,7 +103,9 @@ async def list_tickets(
         return rows
 
 
-async def list_incident_events(connection: AsyncConnection, incident_id: int) -> list[dict]:
+async def list_incident_events(
+    connection: AsyncConnection, incident_id: int
+) -> list[dict]:
     async with connection.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
             """
@@ -113,14 +123,20 @@ async def list_incident_events(connection: AsyncConnection, incident_id: int) ->
 
 
 def _arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Gestione ticket di Alert Intelligence")
+    parser = argparse.ArgumentParser(
+        description="Gestione ticket di Alert Intelligence"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list", help="Elenca i ticket")
     commands.add_parser("backfill", help="Elabora gli eventi già salvati")
-    close = commands.add_parser("close", help="Chiudi un ticket e il relativo incidente")
+    close = commands.add_parser(
+        "close", help="Chiudi un ticket e il relativo incidente"
+    )
     close.add_argument("ticket_id", type=int)
     close.add_argument("--resolution", required=True)
-    link = commands.add_parser("correlate", help="Collega due incidenti con una mappatura verificata")
+    link = commands.add_parser(
+        "correlate", help="Collega due incidenti con una mappatura verificata"
+    )
     link.add_argument("first_incident_id", type=int)
     link.add_argument("second_incident_id", type=int)
     link.add_argument("--mapping", required=True, type=Path)
@@ -131,7 +147,14 @@ async def _run(args: argparse.Namespace, database_url: str) -> None:
     async with await AsyncConnection.connect(database_url) as connection:
         await initialize(connection)
         if args.command == "list":
-            print(json.dumps(await list_tickets(connection), default=str, ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    await list_tickets(connection),
+                    default=str,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         elif args.command == "close":
             if not await close_ticket(connection, args.ticket_id, args.resolution):
                 raise ValueError("Ticket inesistente o già chiuso")
@@ -139,8 +162,12 @@ async def _run(args: argparse.Namespace, database_url: str) -> None:
         elif args.command == "backfill":
             print(f"Eventi collegati: {await project_events(connection)}")
         elif args.command == "correlate":
-            mapping = VerifiedMapping.model_validate_json(args.mapping.read_text(encoding="utf-8"))
-            if await correlate(connection, args.first_incident_id, args.second_incident_id, mapping):
+            mapping = VerifiedMapping.model_validate_json(
+                args.mapping.read_text(encoding="utf-8")
+            )
+            if await correlate(
+                connection, args.first_incident_id, args.second_incident_id, mapping
+            ):
                 print("Correlazione registrata")
             else:
                 print("Correlazione già presente")

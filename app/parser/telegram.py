@@ -91,7 +91,9 @@ _NUMBER = r"(?:[+-]?(?:[0-9]+(?:\.[0-9]+)?|Inf)|NaN)"
 _PERCENT = re.compile(
     rf"(?m)^(?P<prefix>{'|'.join(map(re.escape, _PERCENT_NAMES))})(?P<raw>{_NUMBER}%)(?=[\s.:]|$)"
 )
-_RATE = re.compile(rf"(?m)^(?P<raw>{_NUMBER} (?P<unit>errori/s|pacchetti/s))(?=[\s.]|$)")
+_RATE = re.compile(
+    rf"(?m)^(?P<raw>{_NUMBER} (?P<unit>errori/s|pacchetti/s))(?=[\s.]|$)"
+)
 _RATE_NAMES = {"errori/s": "network_errors", "pacchetti/s": "received_packets_dropped"}
 
 
@@ -103,12 +105,20 @@ def _resource(alertname: str, summary: str, description: str) -> AlertResource:
     if pattern := _RESOURCE_DESCRIPTIONS.get(alertname):
         if match := re.search(pattern, description):
             fields.update(match.groupdict())
-    return AlertResource(**{key: value for key, value in fields.items() if value.strip() not in {"", "<no value>"}})
+    return AlertResource(
+        **{
+            key: value
+            for key, value in fields.items()
+            if value.strip() not in {"", "<no value>"}
+        }
+    )
 
 
 def _metric(name: str, raw: str, unit: str) -> AlertMetric:
     value = Decimal(raw.removesuffix(unit).strip())
-    return AlertMetric(name=name, raw=raw, unit=unit, value=value if value.is_finite() else None)
+    return AlertMetric(
+        name=name, raw=raw, unit=unit, value=value if value.is_finite() else None
+    )
 
 
 def _metrics(description: str) -> tuple[AlertMetric, ...]:
@@ -117,7 +127,10 @@ def _metrics(description: str) -> tuple[AlertMetric, ...]:
         for match in _PERCENT.finditer(description)
     ]
     matches.extend(
-        (match.start(), _metric(_RATE_NAMES[match["unit"]], match["raw"], match["unit"]))
+        (
+            match.start(),
+            _metric(_RATE_NAMES[match["unit"]], match["raw"], match["unit"]),
+        )
         for match in _RATE.finditer(description)
     )
     return tuple(metric for _, metric in sorted(matches))
@@ -160,5 +173,9 @@ def parse_telegram_message(text: str) -> TelegramNotification | None:
     if not alerts:
         return None
     return TelegramNotification(
-        text=text, alertname=alertname, severity=severity.strip() or None, status=status, alerts=tuple(alerts)
+        text=text,
+        alertname=alertname,
+        severity=severity.strip() or None,
+        status=status,
+        alerts=tuple(alerts),
     )

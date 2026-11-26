@@ -55,7 +55,12 @@ def test_accepts_only_text_from_configured_monitor_bot(monkeypatch):
             make_update(text="formato sconosciuto"),
             make_update(),
         ):
-            await collector.handle_update(update, None, chat_id=CHAT, monitor_bot_id=SENDER)
+            await collector.handle_update(
+                update,
+                AsyncMock(spec=AsyncConnection),
+                chat_id=CHAT,
+                monitor_bot_id=SENDER,
+            )
 
     asyncio.run(run())
 
@@ -63,7 +68,10 @@ def test_accepts_only_text_from_configured_monitor_bot(monkeypatch):
     assert raw["text"] == "formato sconosciuto"
     assert raw["parsed"] is None
     assert parsed["text"] == TEXT
-    assert [alert.resource.volume for alert in parsed["parsed"].alerts] == ["pvc-abc", "pvc-def"]
+    assert [alert.resource.volume for alert in parsed["parsed"].alerts] == [
+        "pvc-abc",
+        "pvc-def",
+    ]
 
 
 def test_polls_next_offset_after_processing_batch(monkeypatch):
@@ -80,22 +88,45 @@ def test_polls_next_offset_after_processing_batch(monkeypatch):
     monkeypatch.setattr(collector, "handle_update", handle)
 
     with pytest.raises(EndOfTest):
-        asyncio.run(collector.poll(bot, None, chat_id=CHAT, monitor_bot_id=SENDER))
+        asyncio.run(
+            collector.poll(
+                bot,
+                AsyncMock(spec=AsyncConnection),
+                chat_id=CHAT,
+                monitor_bot_id=SENDER,
+            )
+        )
 
-    assert [call.kwargs["offset"] for call in bot.get_updates.await_args_list] == [None, 22, None]
+    assert [call.kwargs["offset"] for call in bot.get_updates.await_args_list] == [
+        None,
+        22,
+        None,
+    ]
     assert [call.args[0].update_id for call in handle.await_args_list] == [20, 21]
 
 
 def test_storage_failure_stops_polling_before_acknowledgement(monkeypatch):
     bot = AsyncMock(spec=Bot)
-    bot.get_updates.return_value = [make_update(update_id=20), make_update(update_id=21)]
+    bot.get_updates.return_value = [
+        make_update(update_id=20),
+        make_update(update_id=21),
+    ]
     record = AsyncMock(side_effect=[True, RuntimeError("storage unavailable")])
     monkeypatch.setattr(collector, "record_notification", record)
 
     with pytest.raises(RuntimeError, match="storage unavailable"):
-        asyncio.run(collector.poll(bot, None, chat_id=CHAT, monitor_bot_id=SENDER))
+        asyncio.run(
+            collector.poll(
+                bot,
+                AsyncMock(spec=AsyncConnection),
+                chat_id=CHAT,
+                monitor_bot_id=SENDER,
+            )
+        )
 
-    bot.get_updates.assert_awaited_once_with(offset=None, timeout=30, allowed_updates=["message"])
+    bot.get_updates.assert_awaited_once_with(
+        offset=None, timeout=30, allowed_updates=["message"]
+    )
 
 
 def test_postgres_preserves_originals_and_records_events_atomically():
@@ -108,16 +139,24 @@ def test_postgres_preserves_originals_and_records_events_atomically():
             async with connection.transaction(force_rollback=True):
                 schema = sql.Identifier(f"collector_test_{uuid4().hex}")
                 await connection.execute(sql.SQL("CREATE SCHEMA {}").format(schema))
-                await connection.execute(sql.SQL("SET LOCAL search_path TO {}").format(schema))
+                await connection.execute(
+                    sql.SQL("SET LOCAL search_path TO {}").format(schema)
+                )
                 await collector.initialize(connection)
 
                 for update in (
                     make_update(message_id=3),
                     make_update(update_id=21, message_id=3),  # Telegram redelivery
-                    make_update(update_id=22, message_id=4),  # New notification with identical text
-                    make_update(update_id=23, message_id=5, text="alert originale fuori formato"),
+                    make_update(
+                        update_id=22, message_id=4
+                    ),  # New notification with identical text
+                    make_update(
+                        update_id=23, message_id=5, text="alert originale fuori formato"
+                    ),
                 ):
-                    await collector.handle_update(update, connection, chat_id=CHAT, monitor_bot_id=SENDER)
+                    await collector.handle_update(
+                        update, connection, chat_id=CHAT, monitor_bot_id=SENDER
+                    )
 
                 # Failing the second event insert rolls back the first event and its parent.
                 await connection.execute(

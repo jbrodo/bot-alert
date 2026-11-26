@@ -7,7 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 PROJECT_LOCK = 0x414C455254
 
 
-def resource_key(alertname: str, resource: dict[str, str], summary: str) -> dict[str, str]:
+def resource_key(
+    alertname: str, resource: dict[str, str], summary: str
+) -> dict[str, str]:
     if alertname.startswith("LonghornVolume"):
         fields = ("volume",)
     elif alertname == "LonghornDiscoQuasiPieno":
@@ -52,13 +54,25 @@ async def project_events(
         )
         linked_count = 0
         for row in await pending.fetchall():
-            chat_id, message_id, position, sender_id, sent_at, alertname, status, resource, summary = row
+            (
+                chat_id,
+                message_id,
+                position,
+                sender_id,
+                sent_at,
+                alertname,
+                status,
+                resource,
+                summary,
+            ) = row
             key = resource_key(alertname, resource, summary)
             if not key and status == "RESOLVED":
                 continue
 
             identity = (
-                chat_id, sender_id, alertname,
+                chat_id,
+                sender_id,
+                alertname,
                 Jsonb(key or {"message_id": message_id, "position": position}),
             )
             cursor = await connection.execute(
@@ -85,6 +99,8 @@ async def project_events(
                     (*identity, sent_at),
                 )
                 incident = await cursor.fetchone()
+                if incident is None:
+                    raise RuntimeError("Incident insert did not return an ID")
                 await connection.execute(
                     "INSERT INTO tickets (incident_id) VALUES (%s) ON CONFLICT DO NOTHING",
                     incident,
@@ -118,12 +134,20 @@ def _family(alertname: str, key: dict[str, str]) -> str:
         return "XFS"
     if alertname.startswith("Longhorn"):
         return "Longhorn"
-    if "node" in key or "mountpoint" in key or alertname in {"DiscoIOSaturo", "NodoFilesystemReadOnlyKernel"}:
+    if (
+        "node" in key
+        or "mountpoint" in key
+        or alertname in {"DiscoIOSaturo", "NodoFilesystemReadOnlyKernel"}
+    ):
         return "Kubernetes"
-    raise ValueError("L'alert non identifica una risorsa di storage o un nodo Kubernetes")
+    raise ValueError(
+        "L'alert non identifica una risorsa di storage o un nodo Kubernetes"
+    )
 
 
-def _matches_mapping(family: str, key: dict[str, str], mapping: VerifiedMapping) -> bool:
+def _matches_mapping(
+    family: str, key: dict[str, str], mapping: VerifiedMapping
+) -> bool:
     if family == "XFS":
         return bool(key.get("instance")) and key["instance"] == mapping.xfs_instance
     expected = (
@@ -137,7 +161,9 @@ def _matches_mapping(family: str, key: dict[str, str], mapping: VerifiedMapping)
         }
     )
     identifiers = key.keys() & expected.keys()
-    return bool(identifiers) and all(key[field] == expected[field] for field in identifiers)
+    return bool(identifiers) and all(
+        key[field] == expected[field] for field in identifiers
+    )
 
 
 async def correlate(
@@ -166,7 +192,9 @@ async def correlate(
             _matches_mapping(first_family, first_key, mapping)
             and _matches_mapping(second_family, second_key, mapping)
         ):
-            raise ValueError("Gli identificativi degli incidenti non coincidono con la mappatura")
+            raise ValueError(
+                "Gli identificativi degli incidenti non coincidono con la mappatura"
+            )
         left, right = sorted((first, second))
         cursor = await connection.execute(
             """

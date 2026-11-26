@@ -5,7 +5,11 @@ import logging
 import os
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramNetworkError, TelegramRetryAfter, TelegramServerError
+from aiogram.exceptions import (
+    TelegramNetworkError,
+    TelegramRetryAfter,
+    TelegramServerError,
+)
 from aiogram.types import Update
 from psycopg import AsyncConnection
 
@@ -22,7 +26,12 @@ async def handle_update(
     if not message or message.chat.id != chat_id or message.text is None:
         return
     sender = message.from_user
-    if message.sender_chat or not sender or not sender.is_bot or sender.id != monitor_bot_id:
+    if (
+        message.sender_chat
+        or not sender
+        or not sender.is_bot
+        or sender.id != monitor_bot_id
+    ):
         return
 
     parsed = parse_telegram_message(message.text)
@@ -48,7 +57,9 @@ async def poll(
     offset = None
     while True:
         try:
-            updates = await bot.get_updates(offset=offset, timeout=30, allowed_updates=["message"])
+            updates = await bot.get_updates(
+                offset=offset, timeout=30, allowed_updates=["message"]
+            )
         except TelegramRetryAfter as error:
             await asyncio.sleep(error.retry_after)
             continue
@@ -61,7 +72,9 @@ async def poll(
         offset = None
         for update in updates:
             # Advance only after the transaction commits. Restart on storage errors.
-            await handle_update(update, connection, chat_id=chat_id, monitor_bot_id=monitor_bot_id)
+            await handle_update(
+                update, connection, chat_id=chat_id, monitor_bot_id=monitor_bot_id
+            )
             offset = update.update_id + 1
 
 
@@ -72,7 +85,9 @@ async def run() -> None:
         chat_id = int(os.environ["TELEGRAM_CHAT_ID"])
         monitor_bot_id = int(os.environ["TELEGRAM_MONITOR_BOT_ID"])
     except ValueError as error:
-        raise SystemExit("TELEGRAM_CHAT_ID and TELEGRAM_MONITOR_BOT_ID must be integers") from error
+        raise SystemExit(
+            "TELEGRAM_CHAT_ID and TELEGRAM_MONITOR_BOT_ID must be integers"
+        ) from error
 
     async with await AsyncConnection.connect(database_url) as connection:
         await initialize(connection)

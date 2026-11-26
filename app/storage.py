@@ -135,7 +135,11 @@ async def record_notification(
             RETURNING message_id
             """,
             (
-                chat_id, message_id, sender_id, sent_at, text,
+                chat_id,
+                message_id,
+                sender_id,
+                sent_at,
+                text,
                 parsed.alertname if parsed else None,
                 parsed.severity if parsed else None,
                 parsed.status.value if parsed else None,
@@ -149,11 +153,16 @@ async def record_notification(
             for position, alert in enumerate(parsed.alerts):
                 rows.append(
                     (
-                        chat_id, message_id, position,
+                        chat_id,
+                        message_id,
+                        position,
                         alert.status.value if alert.status else None,
-                        alert.summary, alert.description,
+                        alert.summary,
+                        alert.description,
                         Jsonb(alert.resource.model_dump(exclude_none=True)),
-                        Jsonb([metric.model_dump(mode="json") for metric in alert.metrics]),
+                        Jsonb(
+                            [metric.model_dump(mode="json") for metric in alert.metrics]
+                        ),
                     )
                 )
             async with connection.cursor() as cursor:
