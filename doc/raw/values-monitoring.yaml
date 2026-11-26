@@ -1,0 +1,325 @@
+# kube-prometheus-stack – monitoraggio nodi Kubernetes con avvisi Telegram
+# Installazione:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm repo update
+#   helm install monitoring prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace -f values-monitoring.yaml
+#
+# Prima dell'installazione crea il Secret con il token del bot (vedi sezione Alertmanager)
+# e sostituisci chat_id con l'ID della tua chat.
+
+# ---------------------------------------------------------------- etcd
+# Falso positivo: Prometheus non riesce a leggere le metriche di etcd (porta 2381/2379
+# non esposta o con TLS). Disattiviamo raccolta e regole etcd.
+kubeEtcd:
+  enabled: false
+defaultRules:
+  rules:
+    etcd: false
+
+# ---------------------------------------------------------------- Grafana
+grafana:
+  adminPassword: "CambiaQuestaPassword!"
+  persistence:
+    enabled: true
+    storageClassName: longhorn
+    size: 1Gi                   # contiene solo dashboard e impostazioni
+  # Loki come sorgente dati per i log (Explore → Loki)
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://loki.monitoring.svc:3100
+      access: proxy
+      jsonData:
+        maxLines: 1000
+
+# ---------------------------------------------------------------- Prometheus
+prometheus:
+  # Metriche di Longhorn (longhorn-manager espone /metrics sulla porta "manager" 9500)
+  additionalServiceMonitors:
+    - name: longhorn
+      selector:
+        matchLabels:
+          app: longhorn-manager
+      namespaceSelector:
+        matchNames: ["longhorn-system"]
+      endpoints:
+        - port: manager
+          interval: 30s
+  prometheusSpec:
+    # Poco disco sui nodi: 7 giorni, con tetto di spazio (cancella i dati più vecchi se lo raggiunge).
+    # retentionSize conta solo i blocchi: WAL e compattazione usano altro spazio,
+    # quindi va tenuto al ~60% del volume (3GB su 5Gi).
+    retention: 7d
+    retentionSize: 3GB
+    walCompression: true        # WAL compresso (circa la metà dello spazio)
+    scrapeInterval: 60s         # metà dei campioni rispetto al default 30s
+
+# ---------------------------------------------------------------- Meno metriche dall'API server
+# Gli istogrammi dell'API server sono le serie più numerose e nessuna delle nostre regole li usa.
+kubeApiServer:
+  serviceMonitor:
+    metricRelabelings:
+      - sourceLabels: [__name__]
+        regex: "apiserver_request_body_size_bytes_bucket|apiserver_response_sizes_bucket|apiserver_watch_events_sizes_bucket|apiserver_request_sli_duration_seconds_bucket|apiserver_watch_list_duration_seconds_bucket|etcd_request_duration_seconds_bucket|apiserver_storage_.*_bucket"
+        action: drop
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+# ---------------------------------------------------------------- Alertmanager (Telegram)
+# Il token del bot NON sta in questo file: è in un Secret montato in Alertmanager.
+#   kubectl -n monitoring create secret generic telegram-bot --from-literal=token='123456:ABC...'
+alertmanager:
+  alertmanagerSpec:
+    secrets:
+      - telegram-bot            # montato in /etc/alertmanager/secrets/telegram-bot/
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      # Default: nessun invio. Le regole generiche del chart restano visibili
+      # in Grafana / Prometheus / Alertmanager ma NON arrivano su Telegram.
+      receiver: "null"
+      group_by: ["alertname", "instance"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # Solo le regole di questo file (label notifica="telegram") vanno su Telegram
+        - receiver: telegram
+          matchers: ['notifica="telegram"']
+          routes:
+            # Critici: promemoria ogni ora invece che ogni 4
+            - receiver: telegram
+              matchers: ['severity="critical"']
+              repeat_interval: 1h
+    inhibit_rules:
+      - source_matchers: ['severity="critical"']
+        target_matchers: ['severity="warning"']
+        equal: ["alertname", "instance"]
+    receivers:
+      - name: "null"
+      - name: telegram
+        telegram_configs:
+          - bot_token_file: /etc/alertmanager/secrets/telegram-bot/token
+            chat_id: -5325029817        # gruppo Telegram degli avvisi
+            send_resolved: true
+            parse_mode: HTML
+            message: |-
+              {{ if eq .Status "firing" }}🔥 <b>{{ .CommonLabels.alertname }}</b>{{ else }}✅ <b>RISOLTO: {{ .CommonLabels.alertname }}</b>{{ end }}
+              Gravità: {{ .CommonLabels.severity }}
+              {{ range .Alerts }}
+              • {{ .Annotations.summary }}
+              {{ .Annotations.description }}
+              {{ end }}
+
+# ---------------------------------------------------------------- Regole personalizzate nodi
+# (il chart include già molte regole node-exporter; queste aggiungono soglie chiare)
+additionalPrometheusRulesMap:
+  nodi-risorse:
+    groups:
+      - name: nodi.risorse
+        rules:
+          # ---- CPU
+          - alert: NodoCPUAlta
+            expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "CPU alta su {{ $labels.instance }}"
+              description: "Utilizzo CPU al {{ $value | printf \"%.0f\" }}% da oltre 10 minuti."
+          - alert: NodoCPUCritica
+            expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+            for: 5m
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "CPU critica su {{ $labels.instance }}"
+              description: "Utilizzo CPU al {{ $value | printf \"%.0f\" }}%."
+
+          # ---- RAM
+          - alert: NodoMemoriaAlta
+            expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "RAM alta su {{ $labels.instance }}"
+              description: "Memoria usata al {{ $value | printf \"%.0f\" }}%."
+          - alert: NodoMemoriaCritica
+            expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 95
+            for: 5m
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "RAM critica su {{ $labels.instance }}"
+              description: "Memoria usata al {{ $value | printf \"%.0f\" }}%: rischio OOM kill."
+
+          # ---- Filesystem / disco
+          - alert: FilesystemQuasiPieno
+            expr: |
+              (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+                 / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}) * 100 > 80
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Filesystem {{ $labels.mountpoint }} quasi pieno su {{ $labels.instance }}"
+              description: "Spazio usato al {{ $value | printf \"%.0f\" }}%."
+          - alert: FilesystemPieno
+            expr: |
+              (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+                 / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}) * 100 > 90
+            for: 5m
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "Filesystem {{ $labels.mountpoint }} pieno su {{ $labels.instance }}"
+              description: "Spazio usato al {{ $value | printf \"%.0f\" }}%."
+          - alert: FilesystemInodeEsauriti
+            expr: |
+              node_filesystem_files_free{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+                / node_filesystem_files{fstype!~"tmpfs|overlay|squashfs|ramfs"} * 100 < 10
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Inode quasi esauriti su {{ $labels.instance }} ({{ $labels.mountpoint }})"
+              description: "Inode liberi: {{ $value | printf \"%.0f\" }}%."
+          - alert: FilesystemSolaLettura
+            expr: node_filesystem_readonly{fstype!~"tmpfs|overlay|squashfs|ramfs"} == 1
+            for: 2m
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "Filesystem in sola lettura su {{ $labels.instance }}"
+              description: "{{ $labels.mountpoint }} è montato read-only (possibile errore disco)."
+          - alert: DiscoIOSaturo
+            expr: rate(node_disk_io_time_seconds_total[5m]) > 0.9
+            for: 15m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Disco {{ $labels.device }} saturo su {{ $labels.instance }}"
+              description: "Il disco è occupato oltre il 90% del tempo."
+
+          # ---- Rete
+          - alert: NodoErroriRete
+            expr: |
+              rate(node_network_receive_errs_total{device!~"lo|veth.*|cali.*|flannel.*|cni.*"}[5m])
+              + rate(node_network_transmit_errs_total{device!~"lo|veth.*|cali.*|flannel.*|cni.*"}[5m]) > 1
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Errori di rete su {{ $labels.instance }} ({{ $labels.device }})"
+              description: "{{ $value | printf \"%.1f\" }} errori/s."
+          - alert: NodoPacchettiScartati
+            expr: |
+              rate(node_network_receive_drop_total{device!~"lo|veth.*|cali.*|flannel.*|cni.*"}[5m]) > 10
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Pacchetti scartati su {{ $labels.instance }} ({{ $labels.device }})"
+              description: "{{ $value | printf \"%.0f\" }} pacchetti/s scartati in ricezione."
+
+          # ---- Stato nodo
+          - alert: NodoNonReady
+            expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+            for: 5m
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "Nodo {{ $labels.node }} NotReady"
+              description: "Il nodo non è Ready da oltre 5 minuti."
+          - alert: NodoSottoPressione
+            expr: kube_node_status_condition{condition=~"MemoryPressure|DiskPressure|PIDPressure",status="true"} == 1
+            for: 5m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Nodo {{ $labels.node }} in {{ $labels.condition }}"
+              description: "Kubelet segnala {{ $labels.condition }}."
+          - alert: NodeExporterGiu
+            expr: up{job=~".*node-exporter.*"} == 0
+            for: 5m
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "node-exporter non raggiungibile su {{ $labels.instance }}"
+              description: "Nessuna metrica dal nodo da 5 minuti."
+
+  # ---------------------------------------------------------------- Longhorn
+  longhorn:
+    groups:
+      - name: longhorn
+        rules:
+          # robustness: 0=unknown 1=healthy 2=degraded 3=faulted
+          - alert: LonghornVolumeDegradato
+            expr: longhorn_volume_robustness == 2
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Volume Longhorn {{ $labels.volume }} degradato"
+              description: "Una o più repliche non sono sane (PVC {{ $labels.pvc }}, ns {{ $labels.pvc_namespace }})."
+          - alert: LonghornVolumeFaulted
+            expr: longhorn_volume_robustness == 3
+            for: 2m
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "Volume Longhorn {{ $labels.volume }} FAULTED"
+              description: "Nessuna replica utilizzabile: dati non accessibili (PVC {{ $labels.pvc }})."
+          - alert: LonghornVolumeQuasiPieno
+            expr: longhorn_volume_actual_size_bytes / longhorn_volume_capacity_bytes * 100 > 85
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Volume Longhorn {{ $labels.volume }} quasi pieno"
+              description: "Spazio usato al {{ $value | printf \"%.0f\" }}%."
+          - alert: LonghornNodoNonPronto
+            expr: longhorn_node_status{condition="ready"} == 0
+            for: 5m
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "Nodo Longhorn {{ $labels.node }} non pronto"
+              description: "Longhorn non può usare i dischi di questo nodo."
+          - alert: LonghornNodoNonSchedulabile
+            expr: longhorn_node_status{condition="schedulable"} == 0
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Nodo Longhorn {{ $labels.node }} non schedulabile"
+              description: "Longhorn non può creare nuove repliche su questo nodo (spazio sotto la soglia minima o scheduling disabilitato)."
+          - alert: LonghornDiscoQuasiPieno
+            expr: longhorn_disk_usage_bytes / longhorn_disk_capacity_bytes * 100 > 80
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Disco Longhorn {{ $labels.disk }} su {{ $labels.node }} quasi pieno"
+              description: "Spazio usato al {{ $value | printf \"%.0f\" }}%."
+          - alert: LonghornMetricheAssenti
+            expr: absent(longhorn_node_status)
+            for: 10m
+            labels: {severity: warning, notifica: telegram}
+            annotations:
+              summary: "Nessuna metrica da Longhorn"
+              description: "Controlla il ServiceMonitor e i pod longhorn-manager."
+
+  # ---------------------------------------------------------------- XFS (da node-problem-detector)
+  xfs:
+    groups:
+      - name: xfs
+        rules:
+          - alert: XFSCorruzioneRilevata
+            expr: increase(problem_counter{reason="XFSCorruption"}[10m]) > 0
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "Corruzione XFS rilevata su {{ $labels.instance }}"
+              description: "Il kernel ha segnalato errori di corruzione/metadata XFS. Controlla 'dmesg | grep XFS' sul nodo."
+          - alert: XFSFilesystemSpento
+            expr: problem_gauge{type="XFSCorruption",reason="XFSShutdown"} == 1
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "Filesystem XFS spento dal kernel su {{ $labels.instance }}"
+              description: "XFS è andato in shutdown: il volume non è più scrivibile. Serve xfs_repair a volume smontato."
+          - alert: NodoFilesystemReadOnlyKernel
+            expr: problem_gauge{type="ReadonlyFilesystem"} == 1
+            labels: {severity: critical, notifica: telegram}
+            annotations:
+              summary: "Filesystem rimontato in sola lettura su {{ $labels.instance }}"
+              description: "Rilevato dal kernel log (node-problem-detector)."

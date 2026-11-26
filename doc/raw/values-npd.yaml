@@ -1,0 +1,58 @@
+# node-problem-detector – rileva errori XFS dal log del kernel (/dev/kmsg)
+# Installazione:
+#   helm repo add deliveryhero https://charts.deliveryhero.io/
+#   helm repo update
+#   helm install npd deliveryhero/node-problem-detector \
+#     -n monitoring -f values-npd.yaml
+#
+# Espone le metriche problem_counter / problem_gauge che Prometheus
+# usa per le regole "xfs" in values-monitoring.yaml.
+
+settings:
+  log_monitors:
+    - /config/kernel-monitor.json      # già nell'immagine NPD: OOM, TaskHung, KernelOops, Ext4, IOError, KernelDeadlock
+    # /config/readonly-monitor.json NON esiste in questa versione dell'immagine: manda NPD in crash
+    - /custom-config/xfs-monitor.json  # regole XFS definite sotto
+
+  custom_monitor_definitions:
+    xfs-monitor.json: |
+      {
+        "plugin": "kmsg",
+        "logPath": "/dev/kmsg",
+        "lookback": "5m",
+        "bufferSize": 10,
+        "source": "xfs-monitor",
+        "metricsReporting": true,
+        "conditions": [
+          {
+            "type": "XFSCorruption",
+            "reason": "NoXFSCorruption",
+            "message": "Nessun errore XFS rilevato"
+          }
+        ],
+        "rules": [
+          {
+            "type": "temporary",
+            "reason": "XFSCorruption",
+            "pattern": "XFS \\(.*\\): (Corruption detected|Corruption of in-memory data detected|Metadata corruption detected|Internal error|metadata I/O error|log I/O error|Unmount and run xfs_repair).*"
+          },
+          {
+            "type": "permanent",
+            "condition": "XFSCorruption",
+            "reason": "XFSShutdown",
+            "pattern": "XFS \\(.*\\): .*(Filesystem has been shut down|Shutting down filesystem|Please unmount the filesystem and rectify the problem).*"
+          }
+        ]
+      }
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    # deve combaciare con il nome del rilascio di kube-prometheus-stack
+    additionalLabels:
+      release: monitoring
+
+# deve girare su tutti i nodi, anche control-plane
+tolerations:
+  - operator: Exists
