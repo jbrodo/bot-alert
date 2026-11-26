@@ -221,7 +221,7 @@ requires-dist = [
     { name = "aiogram", specifier = ">=3,<4" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "jinja2", specifier = ">=3.1,<4" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.9,<4" },
     { name = "pydantic", specifier = ">=2,<3" },
     { name = "python-multipart", specifier = ">=0.0.18,<1" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
