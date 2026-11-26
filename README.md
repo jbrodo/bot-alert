@@ -1,5 +1,8 @@
 # Alert Intelligence
 
+Le prossime funzionalità, compreso il riepilogo degli incidenti con IA, sono
+descritte nella [roadmap](doc/roadmap.md).
+
 Il parser legge il testo restituito da Telegram in `Message.text` per il
 template italiano in [values-monitoring.yaml](doc/raw/values-monitoring.yaml).
 
@@ -18,6 +21,23 @@ restituiscono `None`.
 
 Esegui i test con Python 3.12 o successivo e `uv run pytest`. Le fixture
 riproducono il template Helm con dati sintetici.
+
+## Controlli di sviluppo
+
+Installa le dipendenze di sviluppo e attiva l'hook Git:
+
+```sh
+uv sync --locked
+uv run --locked pre-commit install
+uv run --locked pre-commit run --all-files
+```
+
+Al commit vengono eseguiti i controlli sui file, Ruff, ty e pytest. Ruff,
+djLint e Prettier applicano automaticamente le correzioni sicure e formattano
+Python, template Jinja e CSS: se modificano file, verifica le modifiche,
+aggiungile allo staging e ripeti il commit. Senza `TEST_DATABASE_URL` i test
+PostgreSQL vengono saltati; la CI li esegue con un database dedicato. Il primo
+avvio scarica gli ambienti degli hook.
 
 ## Collector Telegram
 
@@ -99,3 +119,34 @@ uv run python -m app.tickets correlate 15 16 --mapping mapping.json
 
 Il collegamento viene mostrato su entrambi gli incidenti. Rappresenta una
 relazione verificata tra risorse. La causalità dello shutdown resta da accertare.
+
+## Dashboard e API
+
+Per consultare il PostgreSQL già configurato, avvia la dashboard passando
+lo stesso file usato dal collector.
+
+```sh
+uv run --env-file "$HOME/.config/alert-intelligence/collector.env" uvicorn app.api:app --host 127.0.0.1
+```
+
+Apri `http://127.0.0.1:8000/`. L'elenco filtra per stato o per nome e risorsa.
+Il dettaglio mostra eventi, dati Telegram originali, correlazioni e il modulo
+di chiusura. Da **Correlazioni → Collega un incidente** puoi registrare dalla
+dashboard la stessa mappatura verificata richiesta dalla CLI. La vista
+**Notifiche** mostra anche i messaggi fuori formato
+e gli eventi senza incidente, con un collegamento dove disponibile.
+L'elenco JSON corrispondente è in `/api/notifications` e le operazioni
+sono documentate in `/docs`. La dashboard
+locale usa l'accesso alla macchina come controllo di accesso.
+
+Per un'installazione Docker separata, imposta `ALERT_DB_PASSWORD` con una
+password compatibile con una URI, per esempio una stringa esadecimale
+generata con `openssl rand -hex 32`. Compose crea un proprio volume PostgreSQL.
+
+```sh
+docker compose up -d --build
+```
+
+Con le tre variabili Telegram esportate, usa
+`docker compose --profile telegram up -d --build` per includere il collector.
+`ALERT_DASHBOARD_PORT` cambia la porta locale, che per default è `8000`.

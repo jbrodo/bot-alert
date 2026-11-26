@@ -25,7 +25,10 @@ def test_preserves_group_text_and_original_metric_above_100():
     assert alert.resource.volume == "pvc-abc"
     (metric,) = alert.metrics
     assert (metric.name, metric.raw, metric.unit, metric.value) == (
-        "space_usage", "136%", "%", Decimal("136")
+        "space_usage",
+        "136%",
+        "%",
+        Decimal("136"),
     )
 
 
@@ -41,6 +44,7 @@ def test_firing_group_keeps_all_entries_with_indeterminate_status():
 
     notification = parse_telegram_message(text)
 
+    assert notification is not None
     assert notification.status == AlertStatus.FIRING
     first, second = notification.alerts
     assert first.status is None
@@ -62,11 +66,14 @@ def test_resolved_group_marks_every_entry_resolved_and_extracts_pvc():
 
     notification = parse_telegram_message(text)
 
+    assert notification is not None
     assert notification.status == AlertStatus.RESOLVED
     first, second = notification.alerts
     assert first.status == second.status == AlertStatus.RESOLVED
     assert first.resource.model_dump(exclude_none=True) == {
-        "volume": "pvc-abc", "pvc": "database", "namespace": "production",
+        "volume": "pvc-abc",
+        "pvc": "database",
+        "namespace": "production",
     }
     assert second.resource.namespace == "staging"
 
@@ -113,8 +120,11 @@ def test_resolved_group_marks_every_entry_resolved_and_extracts_pvc():
     ],
 )
 def test_resource_fields_from_annotations(alertname, summary, description, resource):
-    notification = parse_telegram_message(f"🔥 {alertname}\nGravità: critical\n• {summary}\n{description}")
+    notification = parse_telegram_message(
+        f"🔥 {alertname}\nGravità: critical\n• {summary}\n{description}"
+    )
 
+    assert notification is not None
     assert notification.alerts[0].resource.model_dump(exclude_none=True) == resource
 
 
@@ -123,11 +133,16 @@ def test_decimal_rate_and_missing_group_severity():
         "🔥 NodoErroriRete\nGravità: \n• Errori di rete su 10.0.0.3:9100 (eth0)\n1.7 errori/s."
     )
 
+    assert notification is not None
     assert notification.severity is None
     (alert,) = notification.alerts
     assert alert.resource.device == "eth0"
     (metric,) = alert.metrics
-    assert (metric.raw, metric.value, metric.unit) == ("1.7 errori/s", Decimal("1.7"), "errori/s")
+    assert (metric.raw, metric.value, metric.unit) == (
+        "1.7 errori/s",
+        Decimal("1.7"),
+        "errori/s",
+    )
 
 
 def test_threshold_in_explanatory_text_is_not_a_measurement():
@@ -135,6 +150,7 @@ def test_threshold_in_explanatory_text_is_not_a_measurement():
         "🔥 DiscoIOSaturo\nGravità: warning\n• Disco sda saturo su worker:9100\n"
         "Il disco è occupato oltre il 90% del tempo."
     )
+    assert notification is not None
     assert notification.alerts[0].metrics == ()
 
 
@@ -143,6 +159,7 @@ def test_preserves_nonfinite_metric_as_text():
         "🔥 LonghornVolumeQuasiPieno\nGravità: warning\n• Volume Longhorn pvc-abc quasi pieno\n"
         "Spazio usato al +Inf%."
     )
+    assert notification is not None
     (metric,) = notification.alerts[0].metrics
     assert metric.raw == "+Inf%"
     assert metric.value is None
@@ -152,6 +169,7 @@ def test_incomplete_entry_and_unknown_rule_remain_parseable():
     text = "🔥 RegolaNuova\nGravità: warning\n• Una risorsa"
     notification = parse_telegram_message(text)
 
+    assert notification is not None
     assert notification.text == text
     assert notification.alertname == "RegolaNuova"
     (alert,) = notification.alerts

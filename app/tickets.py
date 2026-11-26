@@ -13,7 +13,9 @@ from app.incidents import PROJECT_LOCK, VerifiedMapping, correlate, project_even
 from app.storage import initialize
 
 
-async def close_ticket(connection: AsyncConnection, ticket_id: int, resolution: str) -> bool:
+async def close_ticket(
+    connection: AsyncConnection, ticket_id: int, resolution: str
+) -> bool:
     resolution = resolution.strip()
     if not resolution:
         raise ValueError("Serve una nota di chiusura")
@@ -36,7 +38,16 @@ async def close_ticket(connection: AsyncConnection, ticket_id: int, resolution: 
         return True
 
 
-async def list_tickets(connection: AsyncConnection) -> list[dict]:
+async def list_tickets(
+    connection: AsyncConnection,
+    *,
+    incident_id: int | None = None,
+    status: str | None = None,
+    search: str = "",
+    limit: int | None = None,
+    offset: int = 0,
+    include_latest: bool = False,
+) -> list[dict]:
     async with connection.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
             """
@@ -44,7 +55,13 @@ async def list_tickets(connection: AsyncConnection) -> list[dict]:
                    CASE WHEN i.closed_at IS NULL THEN 'OPEN' ELSE 'CLOSED' END AS status,
                    i.alertname, i.resource_key,
                    i.opened_at, i.closed_at, t.resolution, events.event_count,
-                   COALESCE(links.correlations, '[]'::jsonb) AS correlations
+                   COALESCE(links.correlations, '[]'::jsonb) AS correlations,
+                   CASE WHEN %(include_latest)s THEN (
+                       SELECT max(n.sent_at)
+                       FROM incident_events e
+                       JOIN telegram_notifications n USING (chat_id, message_id)
+                       WHERE e.incident_id = i.id
+                   ) END AS latest_event_at
             FROM tickets t
             JOIN incidents i ON i.id = t.incident_id
             CROSS JOIN LATERAL (
@@ -61,21 +78,65 @@ async def list_tickets(connection: AsyncConnection) -> list[dict]:
                 ) other
                 WHERE i.id IN (c.first_incident_id, c.second_incident_id)
             ) links
-            ORDER BY t.id
+            WHERE (%(incident_id)s::bigint IS NULL OR i.id = %(incident_id)s)
+              AND (%(status)s::text IS NULL
+                   OR (i.closed_at IS NULL AND %(status)s = 'open')
+                   OR (i.closed_at IS NOT NULL AND %(status)s = 'closed'))
+              AND (%(search)s = '' OR strpos(lower(i.alertname), lower(%(search)s)) > 0
+                   OR strpos(lower(i.resource_key::text), lower(%(search)s)) > 0)
+            ORDER BY CASE WHEN %(limit)s::integer IS NOT NULL THEN t.id END DESC, t.id
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            dict(
+                incident_id=incident_id,
+                status=status,
+                search=search,
+                limit=limit,
+                offset=offset,
+                include_latest=include_latest,
+            ),
+        )
+        rows = await cursor.fetchall()
+        if not include_latest:
+            for row in rows:
+                del row["latest_event_at"]
+        return rows
+
+
+async def list_incident_events(
+    connection: AsyncConnection, incident_id: int
+) -> list[dict]:
+    async with connection.cursor(row_factory=dict_row) as cursor:
+        await cursor.execute(
             """
+            SELECT n.sent_at, n.severity, n.raw_text, e.status, e.summary, e.description,
+                   e.resource, e.metrics, e.message_id, e.position
+            FROM incident_events link
+            JOIN alert_events e USING (chat_id, message_id, position)
+            JOIN telegram_notifications n USING (chat_id, message_id)
+            WHERE link.incident_id = %s
+            ORDER BY n.sent_at DESC, e.message_id DESC, e.position
+            """,
+            (incident_id,),
         )
         return await cursor.fetchall()
 
 
 def _arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Gestione ticket di Alert Intelligence")
+    parser = argparse.ArgumentParser(
+        description="Gestione ticket di Alert Intelligence"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list", help="Elenca i ticket")
     commands.add_parser("backfill", help="Elabora gli eventi già salvati")
-    close = commands.add_parser("close", help="Chiudi un ticket e il relativo incidente")
+    close = commands.add_parser(
+        "close", help="Chiudi un ticket e il relativo incidente"
+    )
     close.add_argument("ticket_id", type=int)
     close.add_argument("--resolution", required=True)
-    link = commands.add_parser("correlate", help="Collega due incidenti con una mappatura verificata")
+    link = commands.add_parser(
+        "correlate", help="Collega due incidenti con una mappatura verificata"
+    )
     link.add_argument("first_incident_id", type=int)
     link.add_argument("second_incident_id", type=int)
     link.add_argument("--mapping", required=True, type=Path)
@@ -86,7 +147,14 @@ async def _run(args: argparse.Namespace, database_url: str) -> None:
     async with await AsyncConnection.connect(database_url) as connection:
         await initialize(connection)
         if args.command == "list":
-            print(json.dumps(await list_tickets(connection), default=str, ensure_ascii=False, indent=2))
+            print(
+                json.dumps(
+                    await list_tickets(connection),
+                    default=str,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         elif args.command == "close":
             if not await close_ticket(connection, args.ticket_id, args.resolution):
                 raise ValueError("Ticket inesistente o già chiuso")
@@ -94,8 +162,12 @@ async def _run(args: argparse.Namespace, database_url: str) -> None:
         elif args.command == "backfill":
             print(f"Eventi collegati: {await project_events(connection)}")
         elif args.command == "correlate":
-            mapping = VerifiedMapping.model_validate_json(args.mapping.read_text(encoding="utf-8"))
-            if await correlate(connection, args.first_incident_id, args.second_incident_id, mapping):
+            mapping = VerifiedMapping.model_validate_json(
+                args.mapping.read_text(encoding="utf-8")
+            )
+            if await correlate(
+                connection, args.first_incident_id, args.second_incident_id, mapping
+            ):
                 print("Correlazione registrata")
             else:
                 print("Correlazione già presente")

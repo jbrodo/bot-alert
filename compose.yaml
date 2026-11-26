@@ -1,0 +1,42 @@
+x-database-url: &database-url "postgresql://alert_intelligence:${ALERT_DB_PASSWORD:?Imposta ALERT_DB_PASSWORD}@postgres/alert_intelligence"
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: alert_intelligence
+      POSTGRES_USER: alert_intelligence
+      POSTGRES_PASSWORD: ${ALERT_DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "alert_intelligence", "-d", "alert_intelligence"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  dashboard:
+    build: .
+    environment:
+      DATABASE_URL: *database-url
+    ports:
+      - "127.0.0.1:${ALERT_DASHBOARD_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  collector:
+    profiles: ["telegram"]
+    build: .
+    command: [".venv/bin/python", "-m", "app.telegram.collector"]
+    environment:
+      DATABASE_URL: *database-url
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_MONITOR_BOT_ID: ${TELEGRAM_MONITOR_BOT_ID:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
