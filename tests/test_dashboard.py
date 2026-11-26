@@ -24,16 +24,20 @@ def test_dashboard_and_api_with_postgres(monkeypatch):
         "🔥 LonghornVolumeQuasiPieno\nGravità: warning\n"
         "• Volume Longhorn pvc-abc quasi pieno\nSpazio usato al 136%. <script>alert(1)</script>"
     )
+    unknown = "Messaggio fuori formato <script>alert(2)</script>"
+    grouped = message + "\n• Volume Longhorn pvc-def quasi pieno\nSpazio usato al 120%."
 
     async def prepare():
         async with await AsyncConnection.connect(dsn) as connection:
             await connection.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
         async with await AsyncConnection.connect(database_url) as connection:
             await initialize(connection)
-            await record_notification(
-                connection, chat_id=-10, sender_id=11, message_id=21, sent_at=datetime.now(UTC),
-                text=message, parsed=parse_telegram_message(message),
-            )
+            sent_at = datetime.now(UTC)
+            for message_id, text in enumerate((message, unknown, grouped), start=21):
+                await record_notification(
+                    connection, chat_id=-10, sender_id=11, message_id=message_id, sent_at=sent_at,
+                    text=text, parsed=parse_telegram_message(text),
+                )
 
     async def cleanup():
         async with await AsyncConnection.connect(dsn) as connection:
@@ -63,6 +67,29 @@ def test_dashboard_and_api_with_postgres(monkeypatch):
                 assert detail["events"][0]["raw_text"] == message
                 assert detail["events"][0]["metrics"][0]["raw"] == "136%"
                 assert detail["status"] == "OPEN"
+
+                registry = await client.get("/notifications")
+                assert registry.status_code == 200
+                assert registry.headers["cache-control"] == "no-store"
+                assert "Stato indeterminato" in registry.text
+                assert "&lt;script&gt;alert(2)&lt;/script&gt;" in registry.text
+                assert "<script>alert(2)</script>" not in registry.text
+                assert f"Incidente #{incident_id}" in registry.text
+                assert "pvc-def" not in (await client.get("/notifications?scope=unparsed")).text
+                registry_api = await client.get("/api/notifications")
+                assert registry_api.headers["cache-control"] == "no-store"
+                records = registry_api.json()
+                assert [row["message_id"] for row in records] == [23, 22, 21]
+                assert records[2]["events"][0]["incident_id"] == incident_id
+                unlinked = (await client.get("/api/notifications?scope=unlinked")).json()
+                assert [row["raw_text"] for row in unlinked] == [grouped]
+                assert [event["status"] for event in unlinked[0]["events"]] == [None, None]
+                assert unlinked[0]["linked_count"] == 0
+                unparsed = (await client.get("/api/notifications?scope=unparsed")).json()
+                assert [row["raw_text"] for row in unparsed] == [unknown]
+                assert unparsed[0]["events"] == []
+                paginated = (await client.get("/api/notifications?limit=1&offset=1")).json()
+                assert [row["message_id"] for row in paginated] == [22]
 
                 form_path = f"/tickets/{ticket_id}/close"
                 api_path = f"/api/tickets/{ticket_id}/close"

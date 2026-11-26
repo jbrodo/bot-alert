@@ -1,18 +1,6 @@
-<!doctype html>
-<html lang="it">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Incidenti · Alert Intelligence</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="{{ url_for('assets', path='dashboard.css') }}">
-</head>
-<body>
-  <header class="topbar">
-    <a href="/" class="brand">Alert Intelligence</a>
-    <a href="/docs" class="api-link">API</a>
-  </header>
-  <main>
+{% extends "layout.html" %}
+{% block title %}Incidenti{% endblock %}
+{% block content %}
     <h1>Incidenti</h1>
     <div class="workspace">
       <section class="index" aria-label="Elenco incidenti">
@@ -140,6 +128,4 @@
         {% endif %}
       </article>
     </div>
-  </main>
-</body>
-</html>
+{% endblock %}

@@ -111,7 +111,10 @@ uv run --env-file "$HOME/.config/alert-intelligence/collector.env" uvicorn app.a
 
 Apri `http://127.0.0.1:8000/`. L'elenco filtra per stato o per nome e risorsa.
 Il dettaglio mostra eventi, dati Telegram originali, correlazioni e il modulo
-di chiusura. Le operazioni JSON sono documentate in `/docs`. La dashboard
+di chiusura. La vista **Notifiche** mostra anche i messaggi fuori formato
+e gli eventi senza incidente, con un collegamento dove disponibile.
+L'elenco JSON corrispondente è in `/api/notifications` e le operazioni
+sono documentate in `/docs`. La dashboard
 locale usa l'accesso alla macchina come controllo di accesso.
 
 Per un'installazione Docker separata, imposta `ALERT_DB_PASSWORD` con una

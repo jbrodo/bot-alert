@@ -3,10 +3,43 @@
 from datetime import datetime
 
 from psycopg import AsyncConnection
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.incidents import PROJECT_LOCK, project_events
 from app.parser.telegram import TelegramNotification
+
+
+async def list_notifications(
+    connection: AsyncConnection, *, scope: str, limit: int, offset: int
+) -> list[dict]:
+    async with connection.cursor(row_factory=dict_row) as cursor:
+        await cursor.execute(
+            """
+            SELECT n.chat_id, n.message_id, n.sender_id, n.sent_at, n.alertname, n.severity,
+                   n.group_status, n.raw_text, items.event_count, items.linked_count,
+                   COALESCE(items.events, '[]'::jsonb) AS events
+            FROM telegram_notifications n
+            CROSS JOIN LATERAL (
+                SELECT count(*) AS event_count, count(link.incident_id) AS linked_count,
+                       jsonb_agg(jsonb_build_object(
+                           'position', e.position, 'status', e.status, 'summary', e.summary,
+                           'incident_id', link.incident_id
+                       ) ORDER BY e.position) AS events
+                FROM alert_events e
+                LEFT JOIN incident_events link USING (chat_id, message_id, position)
+                WHERE (e.chat_id, e.message_id) = (n.chat_id, n.message_id)
+            ) items
+            WHERE %(scope)s = 'all'
+               OR (%(scope)s = 'unparsed' AND n.group_status IS NULL)
+               OR (%(scope)s = 'unlinked' AND n.group_status IS NOT NULL
+                   AND items.linked_count < items.event_count)
+            ORDER BY n.sent_at DESC, n.chat_id DESC, n.message_id DESC
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            {"scope": scope, "limit": limit, "offset": offset},
+        )
+        return await cursor.fetchall()
 
 
 async def initialize(connection: AsyncConnection) -> None:

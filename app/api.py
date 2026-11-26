@@ -7,7 +7,7 @@ from pathlib import Path as FilePath
 from typing import Annotated, Literal
 from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Path, Query, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Path, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -15,12 +15,13 @@ from psycopg import AsyncConnection
 from pydantic import BaseModel, StringConstraints
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.storage import initialize
+from app.storage import initialize, list_notifications
 from app.tickets import close_ticket, list_incident_events, list_tickets
 
 WEB = FilePath(__file__).with_name("web")
 PAGE_SIZE = 40
 DashboardStatus = Literal["open", "closed", "all"]
+NotificationScope = Literal["all", "unparsed", "unlinked"]
 Resolution = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 IncidentId = Annotated[int, Query(ge=1, le=2**63 - 1)]
 PathId = Annotated[int, Path(ge=1, le=2**63 - 1)]
@@ -124,6 +125,39 @@ async def incidents(
 @app.get("/api/incidents/{incident_id}")
 async def incident_detail(connection: Database, incident_id: PathId):
     return await get_incident(connection, incident_id)
+
+
+@app.get("/notifications", response_class=HTMLResponse, include_in_schema=False)
+async def notification_registry(
+    request: Request,
+    connection: Database,
+    scope: NotificationScope = "all",
+    page: Annotated[int, Query(ge=1, le=1000000)] = 1,
+):
+    messages = await list_notifications(
+        connection, scope=scope, limit=PAGE_SIZE + 1, offset=(page - 1) * PAGE_SIZE,
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="notifications.html",
+        context={
+            "messages": messages[:PAGE_SIZE], "scope": scope, "page": page,
+            "next_page": len(messages) > PAGE_SIZE, "incident_link": dashboard_url,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/notifications")
+async def notification_records(
+    response: Response,
+    connection: Database,
+    scope: NotificationScope = "all",
+    limit: Annotated[int, Query(ge=1, le=200)] = PAGE_SIZE,
+    offset: Annotated[int, Query(ge=0, le=2**31 - 1)] = 0,
+):
+    response.headers["Cache-Control"] = "no-store"
+    return await list_notifications(connection, scope=scope, limit=limit, offset=offset)
 
 
 async def finish_ticket(connection: AsyncConnection, ticket_id: int, resolution: str):
