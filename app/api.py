@@ -26,6 +26,7 @@ from pydantic import BaseModel, StringConstraints, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.incidents import VerifiedMapping, correlate
+from app.summaries import SummaryUnavailable, summarize_incident
 from app.storage import initialize, list_notifications
 from app.tickets import close_ticket, list_incident_events, list_tickets
 
@@ -328,6 +329,29 @@ async def incidents(
 @app.get("/api/incidents/{incident_id}")
 async def incident_detail(connection: Database, incident_id: PathId):
     return await get_incident(connection, incident_id)
+
+
+@app.post("/incidents/{incident_id}/summary", include_in_schema=False)
+async def incident_summary(request: Request, connection: Database, incident_id: PathId):
+    require_same_origin(request)
+    if not await list_tickets(connection, incident_id=incident_id):
+        raise HTTPException(404, "Incidente inesistente")
+    try:
+        summary = await summarize_incident(connection, incident_id)
+    except SummaryUnavailable as exc:
+        return templates.TemplateResponse(
+            request=request,
+            name="summary.html",
+            context={"error": str(exc), "summary": None, "incident_id": incident_id},
+            status_code=503,
+            headers={"Cache-Control": "no-store"},
+        )
+    return templates.TemplateResponse(
+        request=request,
+        name="summary.html",
+        context={"error": "", "summary": summary, "incident_id": incident_id},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/notifications", response_class=HTMLResponse, include_in_schema=False)

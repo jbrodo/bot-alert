@@ -116,6 +116,11 @@
                     <a href="#nota-chiusura">Nota di chiusura</a>
                 {% endif %}
             </nav>
+            <form class="summary-action"
+                  method="post"
+                  action="/incidents/{{ selected.incident_id }}/summary">
+                <button type="submit">Genera riepilogo con IA</button>
+            </form>
             </header>
             {% if selected.resolution %}
                 <section class="section" aria-labelledby="nota-chiusura">
@@ -138,7 +143,7 @@
                 <ol class="timeline">
                     {% for group in event_groups %}
                         {% set event = group[0] %}
-                        <li>
+                        <li id="evento-{{ event.message_id }}-{{ event.position }}">
                             <div class="event-meta">
                                 <time datetime="{{ event.sent_at.isoformat() }}">{{ event.sent_at | utc }}</time>
                                 <span class="event-status {{ event.status | lower }}">{{ event.status or 'Stato indeterminato' }}</span>

@@ -19,6 +19,10 @@ services:
     build: .
     environment:
       DATABASE_URL: *database-url
+      LOCAL_LLM_BASE_URL: http://host.docker.internal:11434/v1
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${ALERT_DASHBOARD_PORT:-8000}:8000"
     depends_on:

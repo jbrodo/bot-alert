@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block title %}Riepilogo incidente{% endblock %}
+{% block content %}
+    <h1>Riepilogo incidente</h1>
+    <p><a href="/?status=all&incident={{ incident_id }}#incident">Torna all’incidente #{{ incident_id }}</a></p>
+    {% if error %}
+        <p class="form-error" role="alert">{{ error }}</p>
+        <form method="post" action="/incidents/{{ incident_id }}/summary">
+            <button type="submit">Riprova</button>
+        </form>
+    {% else %}
+        <p class="muted">Bozza generata da {{ summary.included_events }} eventi su {{ summary.total_events }}. Verifica i riferimenti prima di usarla.</p>
+        {% for title, points in [('Cronologia', summary.timeline), ('Evidenze principali', summary.findings), ('Da verificare', summary.to_verify)] %}
+            {% if points %}
+                <section class="section">
+                    <h2>{{ title }}</h2>
+                    <ul class="links">
+                        {% for point in points %}
+                            <li>
+                                <p>{{ point.text }}</p>
+                                <p class="muted">
+                                    Eventi:
+                                    {% for ref in point.event_refs %}
+                                        {% set message_id, position = ref.split(':') %}
+                                        <a href="/?status=all&incident={{ incident_id }}#evento-{{ message_id }}-{{ position }}">#{{ ref }}</a>
+                                    {% endfor %}
+                                </p>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </section>
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+{% endblock %}

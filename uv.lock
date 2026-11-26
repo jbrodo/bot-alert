@@ -199,6 +199,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "aiogram" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -209,7 +210,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "djlint" },
-    { name = "httpx" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
@@ -218,8 +218,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-     { name = "aiogram", specifier = ">=3.34.0,<4" },
+    { name = "aiogram", specifier = ">=3.34.0,<4" },
     { name = "fastapi", specifier = ">=0.115,<1" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "jinja2", specifier = ">=3.1,<4" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.9,<4" },
     { name = "pydantic", specifier = ">=2.14.4,<3" },
@@ -230,7 +231,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "djlint", specifier = ">=1.54.2" },
-    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "pre-commit", specifier = ">=4.7.0" },
     { name = "pytest", specifier = ">=9.2.0,<10" },
     { name = "ruff", specifier = ">=0.17.6" },

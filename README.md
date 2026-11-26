@@ -139,6 +139,19 @@ L'elenco JSON corrispondente è in `/api/notifications` e le operazioni
 sono documentate in `/docs`. La dashboard
 locale usa l'accesso alla macchina come controllo di accesso.
 
+### Riepilogo locale con IA
+
+La dashboard può generare una bozza dai campi strutturati degli eventi con Ollama
+o un server locale compatibile con l'API OpenAI, come vLLM con modelli Unsloth.
+Imposta `LOCAL_LLM_MODEL` con il nome del modello. L’endpoint predefinito è
+`http://127.0.0.1:11434/v1`; `LOCAL_LLM_BASE_URL` lo cambia. La chiave facoltativa
+`LOCAL_LLM_API_KEY` viene inviata come Bearer token. Con Docker Compose la
+dashboard raggiunge Ollama sull’host tramite `host.docker.internal:11434`.
+
+La bozza mostra riferimenti agli eventi inclusi, fino a 40 per generazione.
+Controlla ogni affermazione sulle notifiche originali. Non chiude ticket e non
+crea correlazioni.
+
 Per un'installazione Docker separata, imposta `ALERT_DB_PASSWORD` con una
 password compatibile con una URI, per esempio una stringa esadecimale
 generata con `openssl rand -hex 32`. Compose crea un proprio volume PostgreSQL.
