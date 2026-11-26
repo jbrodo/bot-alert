@@ -2,7 +2,7 @@
 
 import os
 from contextlib import asynccontextmanager
-from datetime import UTC
+from datetime import UTC, date, datetime, time, timedelta
 from itertools import groupby
 from pathlib import Path as FilePath
 from typing import Annotated, Literal
@@ -35,6 +35,7 @@ DashboardStatus = Literal["open", "closed", "all"]
 DashboardSearch = Annotated[str, Query(max_length=120)]
 DashboardPage = Annotated[int, Query(ge=1, le=1000000)]
 NotificationScope = Literal["all", "unparsed", "unlinked"]
+NotificationSearch = Annotated[str, Query(max_length=120)]
 Resolution = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
 ]
@@ -81,6 +82,21 @@ def dashboard_url(
     if incident is not None:
         query["incident"] = incident
     return "/?" + urlencode(query)
+
+
+def notification_url(
+    scope: str,
+    search: str,
+    since: date | None,
+    until: date | None,
+    page: int = 1,
+) -> str:
+    query = {"scope": scope, "search": search, "page": page}
+    if since is not None:
+        query["since"] = since.isoformat()
+    if until is not None:
+        query["until"] = until.isoformat()
+    return "/notifications?" + urlencode(query)
 
 
 async def render_dashboard(
@@ -319,11 +335,39 @@ async def notification_registry(
     request: Request,
     connection: Database,
     scope: NotificationScope = "all",
+    search: NotificationSearch = "",
+    since: date | None = None,
+    until: date | None = None,
     page: Annotated[int, Query(ge=1, le=1000000)] = 1,
 ):
+    if since is not None and until is not None and since > until:
+        return templates.TemplateResponse(
+            request=request,
+            name="notifications.html",
+            context={
+                "messages": [],
+                "scope": scope,
+                "search": search.strip(),
+                "since": since,
+                "until": until,
+                "page": 1,
+                "next_page": False,
+                "incident_link": dashboard_url,
+                "notification_link": notification_url,
+                "filter_error": "L’intervallo di date non è valido.",
+            },
+            status_code=422,
+            headers={"Cache-Control": "no-store"},
+        )
+    start = datetime.combine(since, time.min, UTC) if since else None
+    end = datetime.combine(until + timedelta(days=1), time.min, UTC) if until else None
+    search = search.strip()
     messages = await list_notifications(
         connection,
         scope=scope,
+        search=search,
+        since=start,
+        until=end,
         limit=PAGE_SIZE + 1,
         offset=(page - 1) * PAGE_SIZE,
     )
@@ -333,9 +377,14 @@ async def notification_registry(
         context={
             "messages": messages[:PAGE_SIZE],
             "scope": scope,
+            "search": search,
+            "since": since,
+            "until": until,
             "page": page,
             "next_page": len(messages) > PAGE_SIZE,
             "incident_link": dashboard_url,
+            "notification_link": notification_url,
+            "filter_error": "",
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -346,11 +395,26 @@ async def notification_records(
     response: Response,
     connection: Database,
     scope: NotificationScope = "all",
+    search: Annotated[str, Query(max_length=120)] = "",
+    since: date | None = None,
+    until: date | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = PAGE_SIZE,
     offset: Annotated[int, Query(ge=0, le=2**31 - 1)] = 0,
 ):
     response.headers["Cache-Control"] = "no-store"
-    return await list_notifications(connection, scope=scope, limit=limit, offset=offset)
+    if since is not None and until is not None and since > until:
+        raise HTTPException(422, "Intervallo di date non valido")
+    start = datetime.combine(since, time.min, UTC) if since else None
+    end = datetime.combine(until + timedelta(days=1), time.min, UTC) if until else None
+    return await list_notifications(
+        connection,
+        scope=scope,
+        search=search.strip(),
+        since=start,
+        until=end,
+        limit=limit,
+        offset=offset,
+    )
 
 
 async def finish_ticket(connection: AsyncConnection, ticket_id: int, resolution: str):

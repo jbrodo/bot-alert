@@ -456,6 +456,39 @@ textarea {
   border: 1px solid var(--frame);
   border-radius: 10px;
 }
+.notification-search {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1fr) repeat(2, minmax(130px, auto))
+    auto auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--frame);
+}
+.notification-search label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+.notification-search input {
+  min-width: 0;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #778b98;
+  border-radius: 5px;
+}
+.notification-search button,
+.notification-search > a {
+  min-height: 42px;
+}
+.filter-error {
+  padding: 12px 20px 0;
+}
 .notification-register .tabs {
   flex-wrap: wrap;
   column-gap: 20px;
@@ -550,6 +583,15 @@ textarea {
     align-items: center;
     gap: 4px 8px;
     text-align: start;
+  }
+}
+
+@media (max-width: 620px) {
+  .notification-search {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .notification-search > div:first-of-type {
+    grid-column: 1 / -1;
   }
 }
 
