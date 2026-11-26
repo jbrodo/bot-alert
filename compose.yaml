@@ -20,7 +20,7 @@ services:
     environment:
       DATABASE_URL: *database-url
       LOCAL_LLM_BASE_URL: http://host.docker.internal:11434/v1
-      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-gemma3:4b}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

@@ -33,7 +33,7 @@ class SummaryUnavailable(Exception):
 
 async def summarize_incident(connection, incident_id: int) -> IncidentSummary:
     base_url = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/")
-    model = os.getenv("LOCAL_LLM_MODEL", "").strip()
+    model = os.getenv("LOCAL_LLM_MODEL", "gemma3:4b").strip()
     if not model:
         raise SummaryUnavailable(
             "Configura LOCAL_LLM_MODEL con il nome del modello locale."

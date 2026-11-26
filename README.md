@@ -141,9 +141,10 @@ locale usa l'accesso alla macchina come controllo di accesso.
 
 ### Riepilogo locale con IA
 
-La dashboard può generare una bozza dai campi strutturati degli eventi con Ollama
-o un server locale compatibile con l'API OpenAI, come vLLM con modelli Unsloth.
-Imposta `LOCAL_LLM_MODEL` con il nome del modello. L’endpoint predefinito è
+La dashboard genera una bozza dai campi strutturati degli eventi con Ollama
+e il modello generativo `gemma3:4b`, oppure con un server locale compatibile
+con l'API OpenAI. Imposta `LOCAL_LLM_MODEL` per usare un altro modello.
+L’endpoint predefinito è
 `http://127.0.0.1:11434/v1`; `LOCAL_LLM_BASE_URL` lo cambia. La chiave facoltativa
 `LOCAL_LLM_API_KEY` viene inviata come Bearer token. Con Docker Compose la
 dashboard raggiunge Ollama sull’host tramite `host.docker.internal:11434`.
