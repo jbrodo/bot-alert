@@ -11,7 +11,14 @@ from app.parser.telegram import TelegramNotification
 
 
 async def list_notifications(
-    connection: AsyncConnection, *, scope: str, limit: int, offset: int
+    connection: AsyncConnection,
+    *,
+    scope: str,
+    limit: int,
+    offset: int,
+    search: str = "",
+    since: datetime | None = None,
+    until: datetime | None = None,
 ) -> list[dict]:
     async with connection.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
@@ -22,6 +29,7 @@ async def list_notifications(
             FROM telegram_notifications n
             CROSS JOIN LATERAL (
                 SELECT count(*) AS event_count, count(link.incident_id) AS linked_count,
+                       string_agg(e.resource::text, ' ') AS resources,
                        jsonb_agg(jsonb_build_object(
                            'position', e.position, 'status', e.status, 'summary', e.summary,
                            'incident_id', link.incident_id
@@ -30,14 +38,28 @@ async def list_notifications(
                 LEFT JOIN incident_events link USING (chat_id, message_id, position)
                 WHERE (e.chat_id, e.message_id) = (n.chat_id, n.message_id)
             ) items
-            WHERE %(scope)s = 'all'
-               OR (%(scope)s = 'unparsed' AND n.group_status IS NULL)
-               OR (%(scope)s = 'unlinked' AND n.group_status IS NOT NULL
-                   AND items.linked_count < items.event_count)
+            WHERE (
+                %(scope)s = 'all'
+                OR (%(scope)s = 'unparsed' AND n.group_status IS NULL)
+                OR (%(scope)s = 'unlinked' AND n.group_status IS NOT NULL
+                    AND items.linked_count < items.event_count)
+            )
+              AND (%(search)s = '' OR strpos(lower(
+                  concat_ws(' ', n.alertname, n.raw_text, items.resources)
+              ), lower(%(search)s)) > 0)
+              AND (%(since)s::timestamptz IS NULL OR n.sent_at >= %(since)s)
+              AND (%(until)s::timestamptz IS NULL OR n.sent_at < %(until)s)
             ORDER BY n.sent_at DESC, n.chat_id DESC, n.message_id DESC
             LIMIT %(limit)s OFFSET %(offset)s
             """,
-            {"scope": scope, "limit": limit, "offset": offset},
+            {
+                "scope": scope,
+                "search": search,
+                "since": since,
+                "until": until,
+                "limit": limit,
+                "offset": offset,
+            },
         )
         return await cursor.fetchall()
 

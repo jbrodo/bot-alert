@@ -5,10 +5,43 @@
     <section class="notification-register" aria-label="Registro notifiche">
         <nav class="tabs" aria-label="Filtra notifiche">
             {% for value, label in [('all', 'Tutte'), ('unparsed', 'Fuori formato'), ('unlinked', 'Senza incidente')] %}
-                <a href="/notifications?scope={{ value }}"
+                <a href="{{ notification_link(value, search, since, until) }}"
                    {% if scope == value %}aria-current="page"{% endif %}>{{ label }}</a>
             {% endfor %}
         </nav>
+        <form class="notification-search"
+              method="get"
+              action="/notifications"
+              role="search">
+            <input type="hidden" name="scope" value="{{ scope }}">
+            <div>
+                <label for="notification-search">Alert, risorsa o testo</label>
+                <input id="notification-search"
+                       name="search"
+                       type="search"
+                       maxlength="120"
+                       value="{{ search }}">
+            </div>
+            <div>
+                <label for="notification-since">Dal</label>
+                <input id="notification-since"
+                       name="since"
+                       type="date"
+                       value="{{ since.isoformat() if since else '' }}">
+            </div>
+            <div>
+                <label for="notification-until">Al</label>
+                <input id="notification-until"
+                       name="until"
+                       type="date"
+                       value="{{ until.isoformat() if until else '' }}">
+            </div>
+            <button type="submit">Cerca</button>
+            {% if search or since or until %}
+                <a href="{{ notification_link(scope, '', none, none) }}">Azzera</a>
+            {% endif %}
+        </form>
+        {% if filter_error %}<p class="form-error filter-error" role="alert">{{ filter_error }}</p>{% endif %}
         <ul class="incident-list">
             {% for message in messages %}
                 <li class="notification-entry">
@@ -41,7 +74,7 @@
                                             <span>{{ event.status or 'Stato indeterminato' }}</span>
                                             {% if event.incident_id %}
                                                 <a aria-describedby="{{ summary_id }}"
-                                                   href="{{ incident_link('all', '', incident=event.incident_id) }}#incident">Incidente #{{ event.incident_id }}</a>
+                                                   href="{{ incident_link('all', '', incident=event.incident_id) }}#incident&from={{ notification_link(scope, search, since, until, page) | urlencode }}">Incidente #{{ event.incident_id }}</a>
                                             {% else %}
                                                 <span>Senza incidente</span>
                                             {% endif %}
@@ -55,14 +88,14 @@
                     </details>
                 </li>
             {% else %}
-                <li class="empty">{{ 'Nessuna notifica ricevuta.' if scope == 'all' else 'Nessuna notifica corrisponde al filtro.' }}</li>
+                <li class="empty">{{ 'Nessuna notifica ricevuta.' if scope == 'all' and not search and not since and not until else 'Nessuna notifica corrisponde ai filtri.' }}</li>
             {% endfor %}
         </ul>
         {% if page > 1 or next_page %}
             <nav class="pagination" aria-label="Pagine delle notifiche">
-                {% if page > 1 %}<a href="/notifications?scope={{ scope }}&amp;page={{ page - 1 }}">Precedente</a>{% endif %}
+                {% if page > 1 %}<a href="{{ notification_link(scope, search, since, until, page - 1) }}">Precedente</a>{% endif %}
                 <span>Pagina {{ page }}</span>
-                {% if next_page %}<a href="/notifications?scope={{ scope }}&amp;page={{ page + 1 }}">Successiva</a>{% endif %}
+                {% if next_page %}<a href="{{ notification_link(scope, search, since, until, page + 1) }}">Successiva</a>{% endif %}
             </nav>
         {% endif %}
     </section>
