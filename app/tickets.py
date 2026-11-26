@@ -36,7 +36,15 @@ async def close_ticket(connection: AsyncConnection, ticket_id: int, resolution: 
         return True
 
 
-async def list_tickets(connection: AsyncConnection) -> list[dict]:
+async def list_tickets(
+    connection: AsyncConnection,
+    *,
+    incident_id: int | None = None,
+    status: str | None = None,
+    search: str = "",
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict]:
     async with connection.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
             """
@@ -61,8 +69,33 @@ async def list_tickets(connection: AsyncConnection) -> list[dict]:
                 ) other
                 WHERE i.id IN (c.first_incident_id, c.second_incident_id)
             ) links
-            ORDER BY t.id
+            WHERE (%(incident_id)s::bigint IS NULL OR i.id = %(incident_id)s)
+              AND (%(status)s::text IS NULL
+                   OR (i.closed_at IS NULL AND %(status)s = 'open')
+                   OR (i.closed_at IS NOT NULL AND %(status)s = 'closed'))
+              AND (%(search)s = '' OR strpos(lower(i.alertname), lower(%(search)s)) > 0
+                   OR strpos(lower(i.resource_key::text), lower(%(search)s)) > 0)
+            ORDER BY CASE WHEN %(limit)s::integer IS NOT NULL THEN t.id END DESC, t.id
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            dict(incident_id=incident_id, status=status, search=search, limit=limit, offset=offset),
+        )
+        return await cursor.fetchall()
+
+
+async def list_incident_events(connection: AsyncConnection, incident_id: int) -> list[dict]:
+    async with connection.cursor(row_factory=dict_row) as cursor:
+        await cursor.execute(
             """
+            SELECT n.sent_at, n.severity, n.raw_text, e.status, e.summary, e.description,
+                   e.resource, e.metrics, e.message_id, e.position
+            FROM incident_events link
+            JOIN alert_events e USING (chat_id, message_id, position)
+            JOIN telegram_notifications n USING (chat_id, message_id)
+            WHERE link.incident_id = %s
+            ORDER BY n.sent_at DESC, e.message_id DESC, e.position
+            """,
+            (incident_id,),
         )
         return await cursor.fetchall()
 

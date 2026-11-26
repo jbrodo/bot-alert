@@ -99,3 +99,29 @@ uv run python -m app.tickets correlate 15 16 --mapping mapping.json
 
 Il collegamento viene mostrato su entrambi gli incidenti. Rappresenta una
 relazione verificata tra risorse. La causalità dello shutdown resta da accertare.
+
+## Dashboard e API
+
+Per consultare il PostgreSQL già configurato, avvia la dashboard passando
+lo stesso file usato dal collector.
+
+```sh
+uv run --env-file "$HOME/.config/alert-intelligence/collector.env" uvicorn app.api:app --host 127.0.0.1
+```
+
+Apri `http://127.0.0.1:8000/`. L'elenco filtra per stato o per nome e risorsa.
+Il dettaglio mostra eventi, dati Telegram originali, correlazioni e il modulo
+di chiusura. Le operazioni JSON sono documentate in `/docs`. La dashboard
+locale usa l'accesso alla macchina come controllo di accesso.
+
+Per un'installazione Docker separata, imposta `ALERT_DB_PASSWORD` con una
+password compatibile con una URI, per esempio una stringa esadecimale
+generata con `openssl rand -hex 32`. Compose crea un proprio volume PostgreSQL.
+
+```sh
+docker compose up -d --build
+```
+
+Con le tre variabili Telegram esportate, usa
+`docker compose --profile telegram up -d --build` per includere il collector.
+`ALERT_DASHBOARD_PORT` cambia la porta locale, che per default è `8000`.
