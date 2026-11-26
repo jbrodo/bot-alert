@@ -2,8 +2,8 @@
 {% block title %}Incidenti{% endblock %}
 {% block content %}
     <h1>Incidenti</h1>
-    <div class="workspace">
-      <section class="index" aria-label="Elenco incidenti">
+    <div class="workspace{% if not selected %} workspace-empty{% endif %}">
+      <section class="index" id="risultati" tabindex="-1" aria-label="Elenco incidenti">
         <nav class="tabs" aria-label="Stato dei ticket">
           {% for value, label in [('open', 'Aperti'), ('closed', 'Chiusi'), ('all', 'Tutti')] %}
           <a href="{{ link(value, search) }}" {% if status == value %}aria-current="page"{% endif %}>{{ label }}</a>
@@ -11,8 +11,8 @@
         </nav>
         <form class="search" method="get" action="/" role="search">
           <input type="hidden" name="status" value="{{ status }}">
-          <label class="visually-hidden" for="search">Cerca per alert o risorsa</label>
-          <input id="search" name="search" type="search" value="{{ search }}" maxlength="120" placeholder="Cerca per alert o risorsa">
+          <label for="search">Alert o risorsa</label>
+          <input id="search" name="search" type="search" value="{{ search }}" maxlength="120">
           <button type="submit">Cerca</button>
           {% if search %}<a href="{{ link(status, '') }}">Azzera</a>{% endif %}
         </form>
@@ -20,20 +20,30 @@
           {% for ticket in tickets %}
           <li>
             {% set current = selected and ticket.incident_id == selected.incident_id %}
-            <a class="incident-row" href="{{ link(status, search, page=page, incident=ticket.incident_id) }}#incident"
+            <a class="incident-row" id="risultato-{{ ticket.incident_id }}" href="{{ link(status, search, page=page, incident=ticket.incident_id) }}#incident"
               {% if current %}aria-current="true"{% endif %}>
               <span class="row-main">
                 <strong>{{ ticket.alertname }}</strong>
                 <span class="resource-line">{{ ticket.resource_key.values() | join(' · ') }}</span>
+                {% if ticket.latest_event_at %}
+                <span class="resource-line">Ultimo evento <time datetime="{{ ticket.latest_event_at.isoformat() }}">{{ ticket.latest_event_at | utc }}</time></span>
+                {% endif %}
               </span>
               <span class="row-meta">
+                {% if status == 'all' %}
                 <span class="state {{ ticket.status | lower }}">{{ 'Aperto' if ticket.status == 'OPEN' else 'Chiuso' }}</span>
+                {% endif %}
                 <span>{{ ticket.event_count }} {{ 'evento' if ticket.event_count == 1 else 'eventi' }}</span>
               </span>
             </a>
           </li>
           {% else %}
-          <li class="empty">Nessun incidente {{ 'per questa ricerca' if search else 'in questo elenco' }}.</li>
+          <li class="empty">
+            {% if search %}Nessun incidente corrisponde alla ricerca. Prova un altro alert o risorsa.
+            {% elif status == 'open' %}Nessun ticket aperto.
+            {% elif status == 'closed' %}Nessun ticket chiuso.
+            {% else %}Nessun incidente registrato.{% endif %}
+          </li>
           {% endfor %}
         </ul>
         {% if page > 1 or next_page %}
@@ -44,14 +54,29 @@
         </nav>
         {% endif %}
       </section>
-      <article class="detail" id="incident" aria-label="Dettaglio incidente">
-        {% if selected %}
+      {% if selected %}
+      {% set queue_target = '#risultato-' ~ selected.incident_id if selected_in_queue else '#risultati' %}
+      {% set latest = selected.events | first %}
+      <article class="detail" id="incident" tabindex="-1" aria-labelledby="incident-title">
         <header class="detail-header">
-          <div class="detail-meta">
-            <span>Incidente #{{ selected.incident_id }} · Ticket #{{ selected.ticket_id }}</span>
-            <span class="state {{ selected.status | lower }}">{{ 'Aperto' if selected.status == 'OPEN' else 'Chiuso' }}</span>
-          </div>
-          <h2>{{ selected.alertname }}</h2>
+          <a class="queue-link" href="{{ queue_target }}">Torna ai risultati</a>
+          <h2 id="incident-title">{{ selected.alertname }}</h2>
+          <p class="detail-meta">Incidente #{{ selected.incident_id }} · Ticket #{{ selected.ticket_id }}</p>
+          <dl class="resource-facts incident-status">
+            <div>
+              <dt>Stato ticket</dt>
+              <dd><span class="state {{ selected.status | lower }}">{{ 'Aperto' if selected.status == 'OPEN' else 'Chiuso' }}</span></dd>
+            </div>
+            <div>
+              <dt>Ultimo evento di monitoraggio</dt>
+              <dd>
+                {% if latest %}
+                <span class="event-status {{ latest.status | lower }}">{{ latest.status or 'Stato indeterminato' }}</span>
+                <time class="resource-line" datetime="{{ latest.sent_at.isoformat() }}">{{ latest.sent_at | utc }}</time>
+                {% else %}Nessun evento{% endif %}
+              </dd>
+            </div>
+          </dl>
           <div class="timestamps">Aperto il <time datetime="{{ selected.opened_at.isoformat() }}">{{ selected.opened_at | utc }}</time>
             {% if selected.closed_at %} · Chiuso il <time datetime="{{ selected.closed_at.isoformat() }}">{{ selected.closed_at | utc }}</time>{% endif %}
           </div>
@@ -60,17 +85,37 @@
             <div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
             {% endfor %}
           </dl>
+          <nav class="detail-jumps" aria-label="Sezioni dell’incidente">
+            <a href="#cronologia">Cronologia</a>
+            <a href="#correlazioni">Correlazioni</a>
+            {% if selected.status == 'OPEN' %}
+            <a href="#chiusura">Chiudi ticket</a>
+            {% elif selected.resolution %}
+            <a href="#nota-chiusura">Nota di chiusura</a>
+            {% endif %}
+          </nav>
         </header>
         {% if selected.resolution %}
-        <section class="section">
-          <h3>Nota di chiusura</h3>
+        <section class="section" aria-labelledby="nota-chiusura">
+          <h3 id="nota-chiusura" tabindex="-1">Nota di chiusura del ticket #{{ selected.ticket_id }}</h3>
+          {% if form_error and selected.status == 'CLOSED' %}
+          <p class="form-error" role="alert" tabindex="-1" autofocus>{{ form_error }}</p>
+          {% endif %}
           <p class="pre-line">{{ selected.resolution }}</p>
+          {% if form_error and draft.strip() %}
+          <details>
+            <summary>Mostra la nota che avevi inserito</summary>
+            <p class="pre-line">{{ draft }}</p>
+          </details>
+          {% endif %}
+          <a class="queue-link" href="{{ queue_target }}">Torna ai risultati</a>
         </section>
         {% endif %}
         <section class="section">
-          <h3>Cronologia <span class="count">{{ selected.event_count }}</span></h3>
+          <h3 id="cronologia" tabindex="-1">Cronologia <span class="count">{{ selected.event_count }}</span></h3>
           <ol class="timeline">
-            {% for event in selected.events %}
+            {% for group in event_groups %}
+            {% set event = group[0] %}
             <li>
               <div class="event-meta">
                 <time datetime="{{ event.sent_at.isoformat() }}">{{ event.sent_at | utc }}</time>
@@ -88,12 +133,28 @@
                 <summary>Notifica Telegram originale</summary>
                 <pre>{{ event.raw_text }}</pre>
               </details>
+              {% if group | length > 1 %}
+              {% set repeats = group | length - 1 %}
+              <details class="reminders">
+                <summary>{{ repeats }} {{ 'notifica identica precedente' if repeats == 1 else 'notifiche identiche precedenti' }}</summary>
+                <ol>
+                  {% for reminder in group[1:] %}
+                  <li>
+                    <details>
+                      <summary><time datetime="{{ reminder.sent_at.isoformat() }}">{{ reminder.sent_at | utc }}</time></summary>
+                      <pre>{{ reminder.raw_text }}</pre>
+                    </details>
+                  </li>
+                  {% endfor %}
+                </ol>
+              </details>
+              {% endif %}
             </li>
             {% endfor %}
           </ol>
         </section>
         <section class="section">
-          <h3>Correlazioni</h3>
+          <h3 id="correlazioni" tabindex="-1">Correlazioni</h3>
           {% if selected.correlations %}
           <ul class="links">
             {% for relation in selected.correlations %}
@@ -114,18 +175,21 @@
         </section>
         {% if selected.status == 'OPEN' %}
         <section class="section">
-          <h3>Chiudi ticket</h3>
-          <form method="post" action="/tickets/{{ selected.ticket_id }}/close">
+          <h3 id="chiusura" tabindex="-1">Chiudi ticket #{{ selected.ticket_id }}</h3>
+          <p class="closure-context">{{ selected.alertname }} · {{ selected.resource_key.values() | join(' · ') }}</p>
+          <form method="post" action="{{ request.url_for('close_from_dashboard', ticket_id=selected.ticket_id).include_query_params(status=status, search=search, page=page) }}">
             <input type="hidden" name="incident_id" value="{{ selected.incident_id }}">
             <label for="resolution">Nota di chiusura</label>
-            <textarea id="resolution" name="resolution" rows="3" required maxlength="2000"></textarea>
+            {% if form_error %}<p id="resolution-error" class="form-error" role="alert">{{ form_error }}</p>{% endif %}
+            <textarea id="resolution" name="resolution" rows="3" required maxlength="2000"
+              {% if form_error %}aria-invalid="true" aria-describedby="resolution-error" autofocus{% endif %}
+            >
+{{ draft }}</textarea>
             <button class="primary" type="submit">Chiudi ticket</button>
           </form>
         </section>
         {% endif %}
-        {% else %}
-        <div class="no-selection">Seleziona un incidente per aprirne la cronologia.</div>
-        {% endif %}
       </article>
+      {% endif %}
     </div>
 {% endblock %}

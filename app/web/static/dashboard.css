@@ -16,7 +16,8 @@
 body { margin: 0; }
 a { color: var(--accent); }
 button, input, textarea { font: inherit; }
-a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
+a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible,
+[tabindex="-1"]:focus-visible {
   outline: 3px solid #198879;
   outline-offset: 3px;
 }
@@ -34,7 +35,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .topbar a { color: #f8ffff; text-decoration: none; }
 .brand { font-weight: 750; letter-spacing: -.025em; font-size: 1.15rem; }
 .primary-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: .875rem; }
-.primary-nav a { padding: 4px 0; }
+.primary-nav a { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 4px; }
 .primary-nav a:hover, .primary-nav [aria-current] { text-decoration: underline; text-underline-offset: 5px; }
 main { max-width: 1428px; margin: auto; padding: 35px 24px 56px; }
 h1, h2, h3, p, dl { margin: 0; }
@@ -52,6 +53,8 @@ h3 { font-size: 1.125rem; letter-spacing: -.02em; margin-bottom: 14px; }
 }
 
 .index { min-width: 0; border-right: 1px solid var(--frame); }
+.workspace-empty { grid-template-columns: minmax(0, 1fr); max-width: 540px; min-height: 0; }
+.workspace-empty .index { border: 0; }
 .tabs, .search, .pagination { display: flex; align-items: center; gap: 14px; padding-inline: 20px; }
 .tabs { border-bottom: 1px solid var(--frame); gap: 22px; }
 .tabs a {
@@ -64,7 +67,14 @@ h3 { font-size: 1.125rem; letter-spacing: -.02em; margin-bottom: 14px; }
   transition: border-color .15s, color .15s;
 }
 .tabs a:hover, .tabs [aria-current] { color: var(--accent); border-bottom-color: var(--accent); }
-.search { gap: 8px; padding-block: 14px; border-bottom: 1px solid var(--frame); }
+.search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 5px 8px;
+  padding-block: 14px;
+  border-bottom: 1px solid var(--frame);
+}
+.search label { grid-column: 1 / -1; font-size: .875rem; font-weight: 650; }
 .search a, .pagination { font-size: .875rem; }
 input[type="search"], textarea {
   min-width: 0;
@@ -72,7 +82,7 @@ input[type="search"], textarea {
   padding: 8px 10px;
   color: var(--ink);
   background: #fff;
-  border: 1px solid #aebec7;
+  border: 1px solid #778b98;
   border-radius: 5px;
 }
 button {
@@ -116,14 +126,25 @@ button:hover { background: var(--accent-light); }
 .state.open { color: #075b51; background: #d7eee7; }
 .pagination, .empty { padding: 16px 20px; }
 
-.detail { min-width: 0; scroll-margin-top: 12px; }
-.detail-header, .section, .no-selection { padding: 24px clamp(20px, 3vw, 38px); }
+.detail { min-width: 0; }
+.detail, .detail h3[id], .index, .incident-row { scroll-margin-top: 12px; }
+.detail-header, .section { padding: 24px clamp(20px, 3vw, 38px); }
 .section { border-top: 1px solid var(--frame); }
-.detail-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.detail-meta { margin-top: 5px; }
+.detail-header > .queue-link { margin-bottom: 12px; }
+.queue-link, .detail-jumps a, .pagination a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: .875rem;
+  text-underline-offset: 3px;
+}
+.detail-jumps { display: flex; flex-wrap: wrap; gap: 0 18px; margin-top: 12px; }
 .timestamps { margin-top: 10px; }
 .resource-facts { display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 16px; }
 .resource-facts dt { color: var(--muted); font-size: .875rem; }
 .resource-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.incident-status dd { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; margin-top: 3px; }
 .count { color: var(--muted); margin-left: 6px; font-size: .875rem; font-weight: 500; }
 .timeline { list-style: none; padding: 0 0 0 18px; margin: 0 0 0 5px; border-left: 1px solid #b8cec8; }
 .timeline > li { position: relative; padding: 0 0 22px; overflow-wrap: anywhere; }
@@ -146,13 +167,17 @@ button:hover { background: var(--accent-light); }
 details { margin-top: 8px; font-size: .875rem; }
 summary { color: var(--accent); cursor: pointer; }
 pre { padding: 12px; background: var(--canvas); white-space: pre-wrap; overflow-wrap: anywhere; font-family: ui-monospace, monospace; }
+.reminders { margin-block-start: 12px; }
+.reminders ol { padding-inline-start: 1.5em; }
 .links li + li { margin-top: 16px; }
 .links .resource-facts { margin-top: 8px; }
 .section form label { display: block; font-size: .875rem; margin-bottom: 5px; }
 textarea { display: block; resize: vertical; margin-bottom: 12px; }
+textarea[aria-invalid="true"] { border-color: #9d3525; }
+.closure-context { color: var(--muted); margin-bottom: 12px; overflow-wrap: anywhere; }
+.form-error { color: #9d3525; margin-bottom: 8px; font-size: .875rem; }
 .primary { color: #fff; background: var(--accent); }
 .primary:hover { background: #09564e; }
-.no-selection { color: var(--muted); }
 .notification-register { max-width: 900px; background: #fff; border: 1px solid var(--frame); border-radius: 10px; }
 .notification-register .tabs { flex-wrap: wrap; column-gap: 20px; row-gap: 0; }
 .notification-entry { border-bottom: 1px solid var(--frame); }
@@ -167,13 +192,17 @@ textarea { display: block; resize: vertical; margin-bottom: 12px; }
 .notification-events { list-style: none; margin: 0; padding: 0; }
 .notification-events li { display: flex; gap: 4px 14px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--frame); overflow-wrap: anywhere; }
 .notification-events li span, .notification-events li a { font-size: .875rem; }
-.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-
 @media (max-width: 760px) {
   main { padding: 22px 14px 40px; }
   .workspace { display: block; }
   .index { border-right: none; border-bottom: 1px solid var(--frame); }
   .topbar { gap: 12px; flex-wrap: wrap; }
+}
+
+@media (max-width: 420px) {
+  .incident-row, .notification-heading { align-items: start; flex-direction: column; gap: 6px; }
+  .notification-entry summary { padding-inline: 14px; }
+  .row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; text-align: start; }
 }
 
 @media (prefers-reduced-motion: reduce) {

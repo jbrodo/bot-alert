@@ -16,12 +16,15 @@
               <span class="notification-heading">
                 <span class="row-main">
                   <strong>{{ message.alertname or 'Formato non riconosciuto' }}</strong>
+                  {% if not message.alertname %}
+                  <span class="resource-line">{{ message.raw_text.split() | join(' ') | truncate(100, true, '…', 0) }}</span>
+                  {% endif %}
                   <time class="resource-line" datetime="{{ message.sent_at.isoformat() }}">{{ message.sent_at | utc }}</time>
                 </span>
                 <span class="row-meta">
                   {% if message.group_status %}
                   <span class="event-status {{ message.group_status | lower }}">{{ message.group_status }}</span>
-                  <span>{{ message.linked_count }}/{{ message.event_count }} collegati</span>
+                  <span>{{ message.linked_count }} di {{ message.event_count }} collegati</span>
                   {% endif %}
                 </span>
               </span>
@@ -31,10 +34,11 @@
               <ul class="notification-events">
                 {% for event in message.events %}
                 <li>
-                  <strong>{{ event.summary }}</strong>
+                  {% set summary_id = 'evento-' ~ message.chat_id ~ '-' ~ message.message_id ~ '-' ~ event.position %}
+                  <strong id="{{ summary_id }}">{{ event.summary }}</strong>
                   <span>{{ event.status or 'Stato indeterminato' }}</span>
                   {% if event.incident_id %}
-                  <a href="{{ incident_link('all', '', incident=event.incident_id) }}#incident">Incidente #{{ event.incident_id }}</a>
+                  <a aria-describedby="{{ summary_id }}" href="{{ incident_link('all', '', incident=event.incident_id) }}#incident">Incidente #{{ event.incident_id }}</a>
                   {% else %}
                   <span>Senza incidente</span>
                   {% endif %}

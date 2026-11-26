@@ -33,7 +33,7 @@ def test_dashboard_and_api_with_postgres(monkeypatch):
         async with await AsyncConnection.connect(database_url) as connection:
             await initialize(connection)
             sent_at = datetime.now(UTC)
-            for message_id, text in enumerate((message, unknown, grouped), start=21):
+            for message_id, text in enumerate((message, message, unknown, grouped), start=20):
                 await record_notification(
                     connection, chat_id=-10, sender_id=11, message_id=message_id, sent_at=sent_at,
                     text=text, parsed=parse_telegram_message(text),
@@ -53,6 +53,9 @@ def test_dashboard_and_api_with_postgres(monkeypatch):
                 assert page.status_code == 200
                 assert page.headers["cache-control"] == "no-store"
                 assert "pvc-abc" in page.text and "136%" in page.text
+                assert "Stato ticket" in page.text and "Ultimo evento di monitoraggio" in page.text
+                assert "1 notifica identica precedente" in page.text
+                assert "risultato-" in page.text and "Torna ai risultati" in page.text
                 assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
                 assert "<script>alert(1)</script>" not in page.text
                 assert (await client.get("/assets/dashboard.css")).status_code == 200
@@ -79,7 +82,7 @@ def test_dashboard_and_api_with_postgres(monkeypatch):
                 registry_api = await client.get("/api/notifications")
                 assert registry_api.headers["cache-control"] == "no-store"
                 records = registry_api.json()
-                assert [row["message_id"] for row in records] == [23, 22, 21]
+                assert [row["message_id"] for row in records] == [23, 22, 21, 20]
                 assert records[2]["events"][0]["incident_id"] == incident_id
                 unlinked = (await client.get("/api/notifications?scope=unlinked")).json()
                 assert [row["raw_text"] for row in unlinked] == [grouped]
@@ -91,15 +94,32 @@ def test_dashboard_and_api_with_postgres(monkeypatch):
                 paginated = (await client.get("/api/notifications?limit=1&offset=1")).json()
                 assert [row["message_id"] for row in paginated] == [22]
 
-                form_path = f"/tickets/{ticket_id}/close"
+                form_path = f"/tickets/{ticket_id}/close?status=open&search=pvc-abc&page=2"
                 api_path = f"/api/tickets/{ticket_id}/close"
                 form = {"incident_id": incident_id, "resolution": "Presidio verificato"}
                 foreign = await client.post(form_path, data=form, headers={"origin": "https://other.example"})
                 assert foreign.status_code == 403
                 assert (await client.post(api_path, json={"resolution": " "})).status_code == 422
+                invalid = await client.post(
+                    form_path, data={**form, "resolution": "   "}, headers={"origin": "http://localhost"},
+                )
+                assert invalid.status_code == 422
+                assert invalid.headers["content-type"].startswith("text/html")
+                assert 'aria-describedby="resolution-error"' in invalid.text
+                assert ">\n   </textarea>" in invalid.text
+                assert 'value="pvc-abc"' in invalid.text
                 closed = await client.post(form_path, data=form, headers={"origin": "http://localhost"})
                 assert closed.history[0].status_code == 303
+                assert closed.history[0].headers["location"] == (
+                    f"/?status=open&search=pvc-abc&page=2&incident={incident_id}#nota-chiusura"
+                )
                 assert "Presidio verificato" in closed.text
+                duplicate = await client.post(
+                    form_path, data={**form, "resolution": "Bozza operatore"}, headers={"origin": "http://localhost"},
+                )
+                assert duplicate.status_code == 409
+                assert "Il ticket è già stato chiuso" in duplicate.text
+                assert "Bozza operatore" in duplicate.text and "Presidio verificato" in duplicate.text
                 assert (await client.post(api_path, json={"resolution": "Doppio invio"})).status_code == 409
                 assert (await client.get("/api/incidents", params={"status": "open"})).json() == []
                 closed_incidents = (await client.get("/api/incidents", params={"status": "closed"})).json()

@@ -44,6 +44,7 @@ async def list_tickets(
     search: str = "",
     limit: int | None = None,
     offset: int = 0,
+    include_latest: bool = False,
 ) -> list[dict]:
     async with connection.cursor(row_factory=dict_row) as cursor:
         await cursor.execute(
@@ -52,7 +53,13 @@ async def list_tickets(
                    CASE WHEN i.closed_at IS NULL THEN 'OPEN' ELSE 'CLOSED' END AS status,
                    i.alertname, i.resource_key,
                    i.opened_at, i.closed_at, t.resolution, events.event_count,
-                   COALESCE(links.correlations, '[]'::jsonb) AS correlations
+                   COALESCE(links.correlations, '[]'::jsonb) AS correlations,
+                   CASE WHEN %(include_latest)s THEN (
+                       SELECT max(n.sent_at)
+                       FROM incident_events e
+                       JOIN telegram_notifications n USING (chat_id, message_id)
+                       WHERE e.incident_id = i.id
+                   ) END AS latest_event_at
             FROM tickets t
             JOIN incidents i ON i.id = t.incident_id
             CROSS JOIN LATERAL (
@@ -78,9 +85,14 @@ async def list_tickets(
             ORDER BY CASE WHEN %(limit)s::integer IS NOT NULL THEN t.id END DESC, t.id
             LIMIT %(limit)s OFFSET %(offset)s
             """,
-            dict(incident_id=incident_id, status=status, search=search, limit=limit, offset=offset),
+            dict(incident_id=incident_id, status=status, search=search, limit=limit,
+                 offset=offset, include_latest=include_latest),
         )
-        return await cursor.fetchall()
+        rows = await cursor.fetchall()
+        if not include_latest:
+            for row in rows:
+                del row["latest_event_at"]
+        return rows
 
 
 async def list_incident_events(connection: AsyncConnection, incident_id: int) -> list[dict]:

@@ -3,6 +3,7 @@
 import os
 from contextlib import asynccontextmanager
 from datetime import UTC
+from itertools import groupby
 from pathlib import Path as FilePath
 from typing import Annotated, Literal
 from urllib.parse import urlencode
@@ -21,6 +22,8 @@ from app.tickets import close_ticket, list_incident_events, list_tickets
 WEB = FilePath(__file__).with_name("web")
 PAGE_SIZE = 40
 DashboardStatus = Literal["open", "closed", "all"]
+DashboardSearch = Annotated[str, Query(max_length=120)]
+DashboardPage = Annotated[int, Query(ge=1, le=1000000)]
 NotificationScope = Literal["all", "unparsed", "unlinked"]
 Resolution = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
 IncidentId = Annotated[int, Query(ge=1, le=2**63 - 1)]
@@ -61,47 +64,85 @@ def dashboard_url(status: str, search: str, *, page: int = 1, incident: int | No
     return "/?" + urlencode(query)
 
 
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def dashboard(
+async def render_dashboard(
     request: Request,
-    connection: Database,
-    status: DashboardStatus = "open",
-    search: Annotated[str, Query(max_length=120)] = "",
-    page: Annotated[int, Query(ge=1, le=1000000)] = 1,
-    incident: IncidentId | None = None,
+    connection: AsyncConnection,
+    status: DashboardStatus,
+    search: str,
+    page: int,
+    incident: int | None,
+    *,
+    form_error: str = "",
+    draft: str = "",
+    response_status: int = 200,
 ):
     search = search.strip()
     rows = await list_tickets(
         connection, status=None if status == "all" else status, search=search,
-        limit=PAGE_SIZE + 1, offset=(page - 1) * PAGE_SIZE,
+        limit=PAGE_SIZE + 1, offset=(page - 1) * PAGE_SIZE, include_latest=True,
     )
     visible = rows[:PAGE_SIZE]
     selected_id = incident if incident is not None else (visible[0]["incident_id"] if visible else None)
     selected = await get_incident(connection, selected_id) if selected_id is not None else None
+    event_groups = []
+    if selected:
+        event_fields = ("status", "severity", "summary", "description", "resource", "metrics", "raw_text")
+        event_groups = [
+            list(events) for _, events in groupby(
+                selected["events"], key=lambda event: tuple(event[field] for field in event_fields),
+            )
+        ]
+    selected_in_queue = any(ticket["incident_id"] == selected_id for ticket in visible)
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
             "tickets": visible, "selected": selected, "status": status, "search": search, "page": page,
             "link": dashboard_url, "next_page": len(rows) > PAGE_SIZE,
+            "event_groups": event_groups, "selected_in_queue": selected_in_queue,
+            "form_error": form_error, "draft": draft,
         },
+        status_code=response_status,
         headers={"Cache-Control": "no-store"},
     )
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def dashboard(
+    request: Request, connection: Database,
+    status: DashboardStatus = "open", search: DashboardSearch = "",
+    page: DashboardPage = 1, incident: IncidentId | None = None,
+):
+    return await render_dashboard(request, connection, status, search, page, incident)
 
 
 @app.post("/tickets/{ticket_id}/close", include_in_schema=False)
 async def close_from_dashboard(
     request: Request, connection: Database, ticket_id: PathId,
     incident_id: Annotated[int, Form(ge=1, le=2**63 - 1)],
-    resolution: Annotated[Resolution, Form()],
+    resolution: Annotated[str, Form()] = "",
+    status: DashboardStatus = "open", search: DashboardSearch = "", page: DashboardPage = 1,
 ):
     if request.headers.get("origin") != str(request.base_url).rstrip("/"):
         raise HTTPException(403, "Origine della richiesta non valida")
     selected = await list_tickets(connection, incident_id=incident_id)
     if not selected or selected[0]["ticket_id"] != ticket_id:
         raise HTTPException(404, "Ticket inesistente")
-    await finish_ticket(connection, ticket_id, resolution)
-    return RedirectResponse(dashboard_url("all", "", incident=incident_id) + "#incident", status_code=303)
+    note = resolution.strip()
+    if selected[0]["status"] == "OPEN" and not 1 <= len(note) <= 2000:
+        return await render_dashboard(
+            request, connection, status, search, page, incident_id, draft=resolution,
+            form_error="Inserisci una nota di chiusura da 1 a 2000 caratteri.", response_status=422,
+        )
+    if selected[0]["status"] == "CLOSED" or not await close_ticket(connection, ticket_id, note):
+        return await render_dashboard(
+            request, connection, status, search, page, incident_id, draft=resolution,
+            form_error="Il ticket è già stato chiuso. Consulta la nota salvata.", response_status=409,
+        )
+    return RedirectResponse(
+        dashboard_url(status, search.strip(), page=page, incident=incident_id) + "#nota-chiusura",
+        status_code=303,
+    )
 
 
 class TicketClosure(BaseModel):
