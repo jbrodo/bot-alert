@@ -22,7 +22,7 @@
                                     Eventi:
                                     {% for ref in point.event_refs %}
                                         {% set message_id, position = ref.split(':') %}
-                                        <a href="/?status=all&incident={{ incident_id }}#evento-{{ message_id }}-{{ position }}">#{{ ref }}</a>
+                                        <a href="/?status=all&incident={{ incident_id }}&event={{ ref | urlencode }}#evento-{{ message_id }}-{{ position }}">#{{ ref }}</a>
                                     {% endfor %}
                                 </p>
                             </li>

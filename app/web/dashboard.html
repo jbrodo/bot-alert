@@ -73,6 +73,10 @@
                      aria-labelledby="incident-title">
                 <header class="detail-header">
                     <a class="queue-link" href="{{ queue_target }}">Torna ai risultati</a>
+                    {% if request.query_params.get("from_notifications", "").startswith("/notifications?") %}
+                        <a class="queue-link"
+                           href="{{ request.query_params.get('from_notifications') }}">Torna alle notifiche</a>
+                    {% endif %}
                     <h2 id="incident-title">{{ selected.alertname }}</h2>
                     <p class="detail-meta">Incidente #{{ selected.incident_id }} · Ticket #{{ selected.ticket_id }}</p>
                     <dl class="resource-facts incident-status">
@@ -162,11 +166,11 @@
                             </details>
                             {% if group | length > 1 %}
                                 {% set repeats = group | length - 1 %}
-                                <details class="reminders">
+                                <details class="reminders"{% for reminder in group[1:] %}{% if request.query_params.get('event') == reminder.message_id ~ ':' ~ reminder.position %} open{% endif %}{% endfor %}>
                                     <summary>{{ repeats }} {{ 'notifica identica precedente' if repeats == 1 else 'notifiche identiche precedenti' }}</summary>
                                     <ol>
                                         {% for reminder in group[1:] %}
-                                            <li>
+                                            <li id="evento-{{ reminder.message_id }}-{{ reminder.position }}">
                                                 <details>
                                                     <summary><time datetime="{{ reminder.sent_at.isoformat() }}">{{ reminder.sent_at | utc }}</time></summary>
                                                     <pre>{{ reminder.raw_text }}</pre>

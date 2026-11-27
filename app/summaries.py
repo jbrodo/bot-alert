@@ -17,12 +17,15 @@ class SummaryPoint(BaseModel):
     event_refs: list[str] = Field(min_length=1, max_length=10)
 
 
-class IncidentSummary(BaseModel):
+class SummaryContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     timeline: list[SummaryPoint] = Field(max_length=8)
     findings: list[SummaryPoint] = Field(max_length=8)
     to_verify: list[SummaryPoint] = Field(max_length=8)
+
+
+class IncidentSummary(SummaryContent):
     included_events: int = Field(ge=0)
     total_events: int = Field(ge=0)
 
@@ -56,7 +59,7 @@ async def summarize_incident(connection, incident_id: int) -> IncidentSummary:
         for event in selected
     ]
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(90, connect=3)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300, connect=3)) as client:
             response = await client.post(
                 f"{base_url}/chat/completions",
                 headers={
@@ -65,16 +68,22 @@ async def summarize_incident(connection, incident_id: int) -> IncidentSummary:
                 json={
                     "model": model,
                     "temperature": 0,
-                    "response_format": {"type": "json_object"},
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "incident_summary",
+                            "schema": SummaryContent.model_json_schema(),
+                        },
+                    },
                     "messages": [
                         {
                             "role": "system",
                             "content": (
                                 "Scrivi in italiano un riepilogo conciso basato soltanto sugli eventi forniti. "
-                                "Restituisci JSON con timeline, findings, to_verify, included_events, total_events. "
+                                "Restituisci JSON con timeline, findings e to_verify. "
                                 "Ogni elemento delle tre liste contiene text ed event_refs, con riferimenti ref "
                                 "copiati esattamente dagli eventi. Non inventare fatti. In to_verify segnala "
-                                "le informazioni mancanti o gli stati indeterminati. Mantieni entrambi i conteggi."
+                                "le informazioni mancanti o gli stati indeterminati."
                             ),
                         },
                         {
@@ -86,7 +95,7 @@ async def summarize_incident(connection, incident_id: int) -> IncidentSummary:
             )
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
-            summary = IncidentSummary.model_validate_json(content)
+            summary = SummaryContent.model_validate_json(content)
     except (
         httpx.HTTPError,
         KeyError,
@@ -99,14 +108,13 @@ async def summarize_incident(connection, incident_id: int) -> IncidentSummary:
             "Il modello locale non ha restituito un riepilogo valido. Verifica il servizio e riprova."
         ) from exc
 
-    expected_counts = (len(selected), len(events))
-    if (summary.included_events, summary.total_events) != expected_counts:
-        raise SummaryUnavailable(
-            "Il modello ha restituito conteggi degli eventi non validi."
-        )
     for point in (*summary.timeline, *summary.findings, *summary.to_verify):
         if not set(point.event_refs) <= allowed_refs:
             raise SummaryUnavailable(
                 "Il riepilogo contiene riferimenti a eventi inesistenti."
             )
-    return summary
+    if selected and not (summary.timeline or summary.findings or summary.to_verify):
+        raise SummaryUnavailable("Il modello ha restituito un riepilogo vuoto.")
+    return IncidentSummary(
+        **summary.model_dump(), included_events=len(selected), total_events=len(events)
+    )

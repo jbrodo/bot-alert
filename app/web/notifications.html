@@ -74,7 +74,7 @@
                                             <span>{{ event.status or 'Stato indeterminato' }}</span>
                                             {% if event.incident_id %}
                                                 <a aria-describedby="{{ summary_id }}"
-                                                   href="{{ incident_link('all', '', incident=event.incident_id) }}#incident&from={{ notification_link(scope, search, since, until, page) | urlencode }}">Incidente #{{ event.incident_id }}</a>
+                                                   href="{{ incident_link('all', '', incident=event.incident_id) }}&amp;from_notifications={{ notification_link(scope, search, since, until, page) | urlencode }}#incident">Incidente #{{ event.incident_id }}</a>
                                             {% else %}
                                                 <span>Senza incidente</span>
                                             {% endif %}
