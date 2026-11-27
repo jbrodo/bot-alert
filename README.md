@@ -63,6 +63,11 @@ uv run python -m app.telegram.collector
 Esegui una sola istanza per token. Il log mostra gli ID dei messaggi salvati
 e lo stato del gruppo quando riconosciuto. Per verificare la consegna reale
 cerca un `FIRING` e un `RESOLVED` inviati dal bot di monitoring.
+La pagina **Notifiche** mostra l'orario di invio dell'ultimo messaggio
+registrato. Per diagnosticare una mancata raccolta, controlla il log del
+processo collector, la connessione a PostgreSQL e la configurazione Telegram
+descritta sopra. Con Compose, consulta i log con
+`docker compose logs --tail=100 collector`.
 
 `telegram_notifications` conserva il testo originale anche quando il formato
 è sconosciuto. `alert_events` contiene una riga per voce riconosciuta. Le
@@ -139,6 +144,10 @@ L'elenco JSON corrispondente è in `/api/notifications` e le operazioni
 sono documentate in `/docs`. La dashboard
 locale usa l'accesso alla macchina come controllo di accesso.
 
+Nel dettaglio, **Altri episodi** raccoglie gli incidenti con lo stesso alert,
+la stessa identità della risorsa e la stessa fonte di monitoring. Ogni episodio
+riporta il numero di notifiche distinte e l'eventuale nota di chiusura.
+
 ### Riepilogo locale con IA
 
 La dashboard genera una bozza dai campi strutturati degli eventi con Ollama
@@ -164,3 +173,20 @@ docker compose up -d --build
 Con le tre variabili Telegram esportate, usa
 `docker compose --profile telegram up -d --build` per includere il collector.
 `ALERT_DASHBOARD_PORT` cambia la porta locale, che per default è `8000`.
+
+### Gestore dei ticket con Laya
+
+Il gestore si avvia con `uv run python -m app.telegram.manager` e usa
+`DATABASE_URL`, `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`. Con Compose
+fa parte del profilo `telegram`. Richiede Ollama con `laya:latest`;
+`LOCAL_LLM_BASE_URL` e `LAYA_MODEL` consentono di cambiare endpoint e modello.
+
+Il gestore esamina gli eventi collegati ai ticket aperti in ordine cronologico,
+usa Laya per suggerire l'azione e scrive un aggiornamento nella chat configurata.
+Quando l'ultimo evento del ticket è `RESOLVED`, chiude automaticamente il
+ticket con una nota che identifica la notifica. Al primo avvio viene elaborato
+solo l'ultimo evento di ogni ticket aperto. Gli eventi con
+stato indeterminato restano nel registro e non vengono associati automaticamente.
+Se Laya è irraggiungibile, il gestore ritenta. L'invio Telegram e il salvataggio
+del suo esito sono operazioni separate: un'interruzione subito dopo l'invio
+può causare un messaggio duplicato al riavvio.

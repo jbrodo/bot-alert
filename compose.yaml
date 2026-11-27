@@ -42,5 +42,21 @@ services:
       postgres:
         condition: service_healthy
 
+  manager:
+    profiles: ["telegram"]
+    build: .
+    command: [".venv/bin/python", "-m", "app.telegram.manager"]
+    environment:
+      DATABASE_URL: *database-url
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LAYA_MODEL: ${LAYA_MODEL:-laya:latest}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:

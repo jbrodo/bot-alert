@@ -28,7 +28,12 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.incidents import VerifiedMapping, correlate
 from app.summaries import SummaryUnavailable, summarize_incident
 from app.storage import initialize, list_notifications
-from app.tickets import close_ticket, list_incident_events, list_tickets
+from app.tickets import (
+    close_ticket,
+    list_incident_events,
+    list_recurrences,
+    list_tickets,
+)
 
 WEB = FilePath(__file__).with_name("web")
 PAGE_SIZE = 40
@@ -134,7 +139,9 @@ async def render_dashboard(
         await get_incident(connection, selected_id) if selected_id is not None else None
     )
     event_groups = []
-    if selected:
+    recurrences = []
+    if selected is not None and selected_id is not None:
+        recurrences = await list_recurrences(connection, selected_id)
         event_fields = (
             "status",
             "severity",
@@ -164,6 +171,7 @@ async def render_dashboard(
             "link": dashboard_url,
             "next_page": len(rows) > PAGE_SIZE,
             "event_groups": event_groups,
+            "recurrences": recurrences,
             "selected_in_queue": selected_in_queue,
             "form_error": form_error,
             "draft": draft,
@@ -364,6 +372,14 @@ async def notification_registry(
     until: date | None = None,
     page: Annotated[int, Query(ge=1, le=1000000)] = 1,
 ):
+    async with connection.cursor() as cursor:
+        await cursor.execute("SELECT max(sent_at) FROM telegram_notifications")
+        latest_row = await cursor.fetchone()
+        if latest_row is None:
+            raise RuntimeError(
+                "La query dell'ultima notifica non ha restituito risultati"
+            )
+        (latest_notification,) = latest_row
     if since is not None and until is not None and since > until:
         return templates.TemplateResponse(
             request=request,
@@ -379,6 +395,7 @@ async def notification_registry(
                 "incident_link": dashboard_url,
                 "notification_link": notification_url,
                 "filter_error": "L’intervallo di date non è valido.",
+                "latest_notification": latest_notification,
             },
             status_code=422,
             headers={"Cache-Control": "no-store"},
@@ -409,6 +426,7 @@ async def notification_registry(
             "incident_link": dashboard_url,
             "notification_link": notification_url,
             "filter_error": "",
+            "latest_notification": latest_notification,
         },
         headers={"Cache-Control": "no-store"},
     )

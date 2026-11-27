@@ -456,6 +456,10 @@ textarea {
   border: 1px solid var(--frame);
   border-radius: 10px;
 }
+.collector-latest {
+  margin: -12px 0 20px;
+  color: var(--muted);
+}
 .notification-search {
   display: grid;
   grid-template-columns:

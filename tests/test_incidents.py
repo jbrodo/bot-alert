@@ -10,7 +10,7 @@ from psycopg import AsyncConnection, sql
 from app import storage
 from app.incidents import VerifiedMapping, correlate, project_events, resource_key
 from app.parser.telegram import parse_telegram_message
-from app.tickets import close_ticket, list_tickets
+from app.tickets import close_ticket, list_recurrences, list_tickets
 
 
 @pytest.mark.parametrize(
@@ -199,6 +199,13 @@ def test_incident_and_ticket_lifecycle(monkeypatch):
                 assert len(tickets) == 4
                 assert tickets[-1]["closed_at"] is None
                 assert tickets[-1]["incident_id"] != xfs_id
+                (previous,) = await list_recurrences(
+                    connection, tickets[-1]["incident_id"]
+                )
+                assert previous["incident_id"] == xfs_id
+                assert previous["notification_count"] == 2
+                assert previous["resolution"] == "Ripristino verificato sul device"
+                assert await list_recurrences(connection, lh_id) == []
 
                 saved = await connection.execute("SELECT count(*) FROM alert_events")
                 assert await saved.fetchone() == (10,)

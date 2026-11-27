@@ -2,6 +2,13 @@
 {% block title %}Notifiche Telegram{% endblock %}
 {% block content %}
     <h1>Notifiche Telegram</h1>
+    <p class="collector-latest">
+        {% if latest_notification %}
+            Ultimo messaggio registrato, inviato il <time datetime="{{ latest_notification.isoformat() }}">{{ latest_notification | utc }}</time>.
+        {% else %}
+            Nessun messaggio registrato.
+        {% endif %}
+    </p>
     <section class="notification-register" aria-label="Registro notifiche">
         <nav class="tabs" aria-label="Filtra notifiche">
             {% for value, label in [('all', 'Tutte'), ('unparsed', 'Fuori formato'), ('unlinked', 'Senza incidente')] %}

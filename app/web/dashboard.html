@@ -114,6 +114,7 @@
             <nav class="detail-jumps" aria-label="Sezioni dell’incidente">
                 <a href="#cronologia">Cronologia</a>
                 <a href="#correlazioni">Correlazioni</a>
+                <a href="#ricorrenze">Altri episodi</a>
                 {% if selected.status == "OPEN" %}
                     <a href="#chiusura">Chiudi ticket</a>
                 {% elif selected.resolution %}
@@ -183,6 +184,27 @@
                         </li>
                     {% endfor %}
                 </ol>
+            </section>
+            <section class="section" aria-labelledby="ricorrenze">
+                <h3 id="ricorrenze" tabindex="-1">Episodi con lo stesso alert e risorsa</h3>
+                {% if recurrences %}
+                    <p class="muted">{{ recurrences | length }} {{ 'altro incidente' if recurrences | length == 1 else 'altri incidenti' }}</p>
+                    <ul class="links">
+                        {% for recurrence in recurrences %}
+                            <li>
+                                <a href="{{ link('all', '', incident=recurrence.incident_id) }}#incident">Incidente #{{ recurrence.incident_id }}</a>
+                                <p>
+                                    aperto il <time datetime="{{ recurrence.opened_at.isoformat() }}">{{ recurrence.opened_at | utc }}</time>
+                                    {% if recurrence.closed_at %} · chiuso il <time datetime="{{ recurrence.closed_at.isoformat() }}">{{ recurrence.closed_at | utc }}</time>{% else %} · aperto{% endif %}
+                                    · {{ recurrence.notification_count }} {{ 'notifica' if recurrence.notification_count == 1 else 'notifiche' }}
+                                </p>
+                                {% if recurrence.resolution %}<p class="pre-line">Nota di chiusura: {{ recurrence.resolution }}</p>{% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="muted">Nessun altro incidente con lo stesso alert e la stessa risorsa.</p>
+                {% endif %}
             </section>
             <section class="section">
                 <h3 id="correlazioni" tabindex="-1">Correlazioni</h3>

@@ -125,6 +125,19 @@ async def initialize(connection: AsyncConnection) -> None:
             );
             CREATE INDEX IF NOT EXISTS incident_events_incident_id ON incident_events (incident_id);
 
+            CREATE TABLE IF NOT EXISTS ticket_manager_events (
+                chat_id bigint NOT NULL,
+                message_id bigint NOT NULL,
+                position integer NOT NULL,
+                sent_at timestamptz,
+                PRIMARY KEY (chat_id, message_id, position),
+                FOREIGN KEY (chat_id, message_id, position)
+                    REFERENCES incident_events (chat_id, message_id, position)
+            );
+            CREATE TABLE IF NOT EXISTS ticket_manager_chats (
+                chat_id bigint PRIMARY KEY
+            );
+
             CREATE TABLE IF NOT EXISTS incident_correlations (
                 first_incident_id bigint NOT NULL REFERENCES incidents (id),
                 second_incident_id bigint NOT NULL REFERENCES incidents (id),

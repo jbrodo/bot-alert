@@ -122,6 +122,29 @@ async def list_incident_events(
         return await cursor.fetchall()
 
 
+async def list_recurrences(connection: AsyncConnection, incident_id: int) -> list[dict]:
+    async with connection.cursor(row_factory=dict_row) as cursor:
+        await cursor.execute(
+            """
+            SELECT i.id AS incident_id, i.opened_at, i.closed_at, t.resolution,
+                   count(DISTINCT (e.chat_id, e.message_id)) AS notification_count
+            FROM incidents current_incident
+            JOIN incidents i ON i.chat_id = current_incident.chat_id
+                AND i.sender_id = current_incident.sender_id
+                AND i.alertname = current_incident.alertname
+                AND i.resource_key = current_incident.resource_key
+                AND i.id <> current_incident.id
+            JOIN tickets t ON t.incident_id = i.id
+            LEFT JOIN incident_events e ON e.incident_id = i.id
+            WHERE current_incident.id = %s
+            GROUP BY i.id, t.resolution
+            ORDER BY i.opened_at DESC, i.id DESC
+            """,
+            (incident_id,),
+        )
+        return await cursor.fetchall()
+
+
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Gestione ticket di Alert Intelligence"
